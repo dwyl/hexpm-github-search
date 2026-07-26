@@ -3,7 +3,7 @@ services:
     build: .
     ports:
       # VPS host : container port
-      - "${PORT:-4001}:4000"
+      - "${HOST_PORT:-4001}:4000"
     volumes:
       - hexgh_data:/app/data
     env_file:
