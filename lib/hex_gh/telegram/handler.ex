@@ -35,7 +35,8 @@ defmodule HexGh.Telegram.Handler do
     :ok
   end
 
-  def on_update(_update) do
+  def on_update(update) do
+    Logger.warning("Unhandled Telegram update: #{inspect(Map.keys(update))}")
     :ok
   end
 
@@ -50,9 +51,13 @@ defmodule HexGh.Telegram.Handler do
     end
   end
 
-  defp format_result({:ok, markdown}), do: markdown
+  defp format_result({:ok, response}), do: response
   defp format_result({:error, :rate_limited}), do: "Rate limit exceeded. Please wait a moment."
-  defp format_result({:error, _reason}), do: "Something went wrong. Please try again."
+
+  defp format_result({:error, reason}) do
+    Logger.error("Pipeline error: #{inspect(reason)}")
+    "Something went wrong. Please try again."
+  end
 
   defp send_reply(chat_id, reply) do
     case Telegram.send_message(chat_id, reply) do

@@ -2,12 +2,14 @@ services:
   hexgh:
     build: .
     ports:
+      # VPS host : container port
       - "${PORT:-4001}:4000"
     volumes:
       - hexgh_data:/app/data
     env_file:
       - .env
     environment:
+      # we have to assing it internally, override PORTto 4000 because PORT is already take, = 4001
       - PORT=4000
     restart: unless-stopped
 
