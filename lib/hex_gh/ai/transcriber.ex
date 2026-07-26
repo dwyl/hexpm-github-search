@@ -4,8 +4,9 @@ defmodule HexGh.AI.Transcriber do
 
   Accepts an audio URL (e.g. from a Telegram voice message), downloads the
   audio binary, and sends it as a multipart upload to Mistral's
-  `/audio/transcriptions` endpoint. The transcription model is configured
-  via `MISTRAL_TRANSCRIPTION_MODEL` (default: `mistral-large-latest`).
+  `/audio/transcriptions` endpoint using Req's built-in `form_multipart`.
+  The transcription model is configured via `MISTRAL_TRANSCRIPTION_MODEL`
+  (default: `voxtral-mini-latest`).
   """
 
   defp mistral_url do
@@ -13,59 +14,27 @@ defmodule HexGh.AI.Transcriber do
   end
 
   defp transcription_model do
-    Application.get_env(:hex_gh, :mistral_transcription_model, "mistral-large-latest")
+    Application.get_env(:hex_gh, :mistral_transcription_model, "voxtral-mini-latest")
   end
 
   def transcribe(audio_url) when is_binary(audio_url) do
-    case download_audio(audio_url) do
-      {:ok, audio_data, content_type} ->
-        transcribe_audio(audio_data, content_type)
-
-      {:error, _} = error ->
-        error
+    with {:ok, %{status: 200, body: audio_data}} <-
+           Req.get(audio_url, receive_timeout: 15_000, finch: HexGh.Finch) do
+      transcribe_audio(audio_data)
+    else
+      {:ok, %{status: status}} -> {:error, {:download_failed, status}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp download_audio(url) do
-    case Req.get(url, finch: HexGh.Finch) do
-      {:ok, %{status: 200, body: body, headers: headers}} ->
-        content_type =
-          headers
-          |> Enum.find_value("audio/ogg", fn
-            {"content-type", ct} -> ct
-            _ -> false
-          end)
-
-        {:ok, body, content_type}
-
-      {:ok, %{status: status}} ->
-        {:error, {:download_failed, status}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp transcribe_audio(audio_data, content_type) do
-    multipart =
-      Multipart.new()
-      |> Multipart.add_part(Multipart.Part.text_field("model", transcription_model()))
-      |> Multipart.add_part(
-        Multipart.Part.file_content_field("file", audio_data, "audio.ogg",
-          content_type: content_type
-        )
-      )
-
-    content_length = Multipart.content_length(multipart)
-    body = Multipart.body_stream(multipart) |> Enum.to_list() |> IO.iodata_to_binary()
-
+  defp transcribe_audio(audio_data) do
     case Req.post(mistral_url(),
-           body: body,
-           headers: [
-             {"authorization", "Bearer #{mistral_api_key()}"},
-             {"content-type", Multipart.content_type(multipart, "multipart/form-data")},
-             {"content-length", to_string(content_length)}
+           form_multipart: [
+             file: {audio_data, filename: "audio.ogg", content_type: "audio/ogg"},
+             model: transcription_model()
            ],
+           headers: [{"authorization", "Bearer #{mistral_api_key()}"}],
+           receive_timeout: 30_000,
            finch: HexGh.Finch
          ) do
       {:ok, %{status: 200, body: %{"text" => text}}} ->

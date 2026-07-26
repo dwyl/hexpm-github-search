@@ -44,7 +44,7 @@ defmodule HexGh.MixProject do
       {:exqlite, "~> 0.39.0"},
       {:ex_mcp, "~> 0.12.0"},
       {:telegex, "~> 1.8"},
-      {:multipart, "~> 0.4"},
+      # {:multipart, "~> 0.4"},
       {:req, "~> 0.5"},
       {:hammer, "~> 6.2"},
       {:phoenix, "~> 1.8.8"},
