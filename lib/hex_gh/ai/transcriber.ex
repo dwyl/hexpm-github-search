@@ -1,5 +1,12 @@
 defmodule HexGh.AI.Transcriber do
-  @moduledoc false
+  @moduledoc """
+  Audio transcription via the Mistral API (Voxtral model).
+
+  Accepts an audio URL (e.g. from a Telegram voice message), downloads the
+  audio binary, and sends it as a multipart upload to Mistral's
+  `/audio/transcriptions` endpoint. The transcription model is configured
+  via `MISTRAL_TRANSCRIPTION_MODEL` (default: `mistral-large-latest`).
+  """
 
   defp mistral_url do
     "#{Application.get_env(:hex_gh, :mistral_api_url, "https://api.mistral.ai/v1")}/audio/transcriptions"
@@ -12,8 +19,7 @@ defmodule HexGh.AI.Transcriber do
   def transcribe(audio_url) when is_binary(audio_url) do
     case download_audio(audio_url) do
       {:ok, audio_data, content_type} ->
-        provider = Application.get_env(:hex_gh, :whisper_provider, "mistral")
-        transcribe_audio(provider, audio_data, content_type)
+        transcribe_audio(audio_data, content_type)
 
       {:error, _} = error ->
         error
@@ -40,7 +46,7 @@ defmodule HexGh.AI.Transcriber do
     end
   end
 
-  defp transcribe_audio("mistral", audio_data, content_type) do
+  defp transcribe_audio(audio_data, content_type) do
     multipart =
       Multipart.new()
       |> Multipart.add_part(Multipart.Part.text_field("model", transcription_model()))
@@ -57,41 +63,6 @@ defmodule HexGh.AI.Transcriber do
            body: body,
            headers: [
              {"authorization", "Bearer #{mistral_api_key()}"},
-             {"content-type", Multipart.content_type(multipart, "multipart/form-data")},
-             {"content-length", to_string(content_length)}
-           ],
-           finch: HexGh.Finch
-         ) do
-      {:ok, %{status: 200, body: %{"text" => text}}} ->
-        {:ok, text}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, {status, body}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp transcribe_audio("local", audio_data, content_type) do
-    whisper_url =
-      Application.get_env(:hex_gh, :whisper_url) ||
-        raise "WHISPER_URL not configured for local provider"
-
-    multipart =
-      Multipart.new()
-      |> Multipart.add_part(
-        Multipart.Part.file_content_field("file", audio_data, "audio.ogg",
-          content_type: content_type
-        )
-      )
-
-    content_length = Multipart.content_length(multipart)
-    body = Multipart.body_stream(multipart) |> Enum.to_list() |> IO.iodata_to_binary()
-
-    case Req.post(whisper_url,
-           body: body,
-           headers: [
              {"content-type", Multipart.content_type(multipart, "multipart/form-data")},
              {"content-length", to_string(content_length)}
            ],

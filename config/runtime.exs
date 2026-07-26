@@ -36,9 +36,6 @@ config :hex_gh,
   github_api_url: System.get_env("GITHUB_API_URL", "https://api.github.com"),
   github_token: System.get_env("GITHUB_TOKEN"),
   hex_api_url: System.get_env("HEX_API_URL", "https://hex.pm/api"),
-  # Audio transcription
-  whisper_provider: System.get_env("WHISPER_PROVIDER", "mistral"),
-  whisper_url: System.get_env("WHISPER_URL"),
   # Storage
   memory_db_path: System.get_env("MEMORY_DB_PATH", "priv/memory.db"),
   sqlite_vec_path: System.get_env("SQLITE_VEC_PATH"),

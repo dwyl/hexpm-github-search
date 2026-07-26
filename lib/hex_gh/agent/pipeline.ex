@@ -4,7 +4,7 @@ defmodule HexGh.Agent.Pipeline do
 
   Acts as a switch: text input is passed directly to `Agent.process_query/2`,
   while audio input is first transcribed to text via the LLM transcriber
-  (Mistral Voxtral or local Whisper, per config) then forwarded to the same
+  (Mistral Voxtral) then forwarded to the same
   query pipeline.
   """
 
