@@ -11,14 +11,6 @@ defmodule HexGh.Agent do
   Always provide clear, well-formatted Markdown responses.
   """
 
-  @spec process_query(any()) ::
-          {:error,
-           :invalid_tool_args
-           | :rate_limited
-           | <<_::64, _::_*8>>
-           | {:no_tool_call | non_neg_integer(), any()}
-           | %{:__exception__ => any(), :__struct__ => atom(), optional(atom()) => any()}}
-          | {:ok, any()}
   def process_query(user_prompt, opts \\ []) do
     user_id = Keyword.get(opts, :user_id, "default")
 

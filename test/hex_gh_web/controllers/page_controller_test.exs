@@ -1,8 +1,8 @@
 defmodule HexGhWeb.PageControllerTest do
   use HexGhWeb.ConnCase
 
-  test "GET /", %{conn: conn} do
+  test "GET / renders the chat LiveView", %{conn: conn} do
     conn = get(conn, ~p"/")
-    assert html_response(conn, 200) =~ "Peace of mind from prototype to production"
+    assert html_response(conn, 200) =~ "chat"
   end
 end

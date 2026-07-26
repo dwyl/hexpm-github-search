@@ -60,20 +60,17 @@ defmodule HexGh.Memory do
                category,
                content
              ]),
-           {:ok, rows, _cols} <-
-             Basic.rows(Basic.exec(conn, "SELECT last_insert_rowid()", [])) do
-        [[row_id]] = rows
-
-        case Basic.exec(conn, "INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)", [
+           {:ok, [[row_id]], _cols} <-
+             Basic.rows(Basic.exec(conn, "SELECT last_insert_rowid()", [])),
+           {:ok, _, _, updated_conn} <-
+             Basic.exec(conn, "INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)", [
                row_id,
                {:blob, blob}
              ]) do
-          {:ok, _, _, updated_conn} ->
-            {:ok, row_id, updated_conn}
-
-          {:error, err, conn} ->
-            {:error, err, conn}
-        end
+        {:ok, row_id, updated_conn}
+      else
+        {:error, reason, conn} -> {:error, reason, conn}
+        {:error, reason} -> {:error, reason, state.conn}
       end
 
     case result do

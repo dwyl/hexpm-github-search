@@ -138,7 +138,10 @@ defmodule HexGh.Integration.PipelineTest do
     end
 
     test "process_query with RAG context influences the response" do
-      # Bandit fact saved by the previous test — should appear in LLM response
+      # Ensure the fact exists (idempotent — may already be saved by prior test)
+      {:ok, emb} = HexGh.AI.Mistral.embed("Elixir's preferred HTTP server is Bandit")
+      HexGh.Memory.save_fact("general", "Elixir's preferred HTTP server is Bandit", emb)
+
       assert {:ok, response} =
                HexGh.Agent.process_query("find Elixir packages for HTTP servers")
 

@@ -48,7 +48,7 @@ defmodule HexGh.AI.Mistral do
     end
   end
 
-  # defp maybe_add_tools(body, [], _opts), do: body # useless??
+  defp maybe_add_tools(body, [], _opts), do: body
 
   defp maybe_add_tools(body, tools, opts) do
     body
