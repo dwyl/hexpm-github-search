@@ -1,0 +1,17 @@
+_build/
+deps/
+cover/
+doc/
+tmp/
+.git/
+.claude/
+.elixir_ls/
+.expert/
+.env
+*.db
+*.db-*
+*.ez
+erl_crash.dump
+priv/static/assets/
+priv/static/cache_manifest.json
+priv/memory.db

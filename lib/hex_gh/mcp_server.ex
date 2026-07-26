@@ -53,6 +53,21 @@ defmodule HexGh.MCPServer do
           required: ["fact"]
         }
       }
+    },
+    "out_of_scope" => %{
+      type: "function",
+      function: %{
+        name: "out_of_scope",
+        description:
+          "Use this tool when the user's query is NOT about Elixir packages, GitHub issues, or saving knowledge. For example: greetings, general questions, time, weather, math, etc.",
+        parameters: %{
+          type: "object",
+          properties: %{
+            reason: %{type: "string", description: "Brief reason why this is out of scope"}
+          },
+          required: ["reason"]
+        }
+      }
     }
   }
 
@@ -69,6 +84,12 @@ defmodule HexGh.MCPServer do
   def call_tool("save_memory", %{"fact" => fact} = args) do
     package = Map.get(args, "package")
     SaveMemory.save(fact, package)
+  end
+
+  def call_tool("out_of_scope", %{"reason" => _reason}) do
+    {:error,
+     {:out_of_scope,
+      "Sorry, I can't process this. I only handle Elixir package search, GitHub issue search, and saving knowledge."}}
   end
 
   def call_tool(name, _args) do

@@ -52,7 +52,10 @@ if telegram_bot_token do
   end
 
   config :telegex, token: telegram_bot_token
-  config :hex_gh, telegram_secret_token: telegram_secret_token
+
+  config :hex_gh,
+    telegram_secret_token: telegram_secret_token,
+    telegram_webhook_url: System.get_env("TELEGRAM_WEBHOOK_URL")
 end
 
 if config_env() == :prod do

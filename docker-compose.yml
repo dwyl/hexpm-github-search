@@ -1,0 +1,18 @@
+services:
+  hexgh:
+    build: .
+    ports:
+      - "4000:4000"
+    volumes:
+      - hexgh_data:/app/data
+    env_file:
+      - .env
+    environment:
+      - PHX_SERVER=true
+      - PHX_HOST=hexgh.nlex.uk
+      - PORT=4000
+      - MEMORY_DB_PATH=/app/data/memory.db
+    restart: unless-stopped
+
+volumes:
+  hexgh_data:

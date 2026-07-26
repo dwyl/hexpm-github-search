@@ -84,6 +84,7 @@ All settings are in `config/runtime.exs`, read from environment variables:
 | `MEMORY_DISTANCE_THRESHOLD` | `0.7` | Cosine distance cutoff for RAG results |
 | `TELEGRAM_BOT_TOKEN` | optional | Telegram bot token (enables webhook) |
 | `TELEGRAM_SECRET_TOKEN` | required if bot token set | Webhook validation secret |
+| `TELEGRAM_WEBHOOK_URL` | optional | Public base URL for webhook (e.g. `https://your-tunnel.domain`) |
 
 ## Setup
 

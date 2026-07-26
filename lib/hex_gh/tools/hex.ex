@@ -5,20 +5,21 @@ defmodule HexGh.Tools.Hex do
 
   def search_packages(query) do
     case Req.get("#{base_url()}/packages",
-           params: [search: query],
+           params: [search: query, sort: "total_downloads"],
            finch: HexGh.Finch
          ) do
       {:ok, %{status: 200, body: items}} when is_list(items) ->
         results =
           items
-          |> Enum.take(5)
+          |> Enum.take(10)
           |> Enum.map(fn pkg ->
             %{
               name: pkg["name"],
-              description: pkg["meta"]["description"],
+              description: get_in(pkg, ["meta", "description"]),
               latest_version: get_in(pkg, ["releases", Access.at(0), "version"]),
               updated_at: pkg["updated_at"],
               downloads_total: get_in(pkg, ["downloads", "all"]) || 0,
+              downloads_recent: get_in(pkg, ["downloads", "recent"]) || 0,
               url: pkg["html_url"] || "https://hex.pm/packages/#{pkg["name"]}"
             }
           end)

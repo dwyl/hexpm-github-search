@@ -35,11 +35,22 @@ defmodule HexGhWeb.ChatLive do
 
   @impl true
   def handle_info({:run_pipeline, text}, socket) do
+    require Logger
+
     content =
       case Pipeline.run(%{text: text, is_audio: false}) do
-        {:ok, markdown} -> markdown
-        {:error, :rate_limited} -> "Rate limit exceeded. Please wait a moment."
-        {:error, _reason} -> "Something went wrong. Please try again."
+        {:ok, response} ->
+          response
+
+        {:error, :rate_limited} ->
+          "Rate limit exceeded. Please wait a moment."
+
+        {:error, {:no_tool_call, response}} ->
+          response
+
+        {:error, reason} ->
+          Logger.error("Pipeline failed: #{inspect(reason)}")
+          "Something went wrong. Please try again."
       end
 
     assistant_msg = %{id: System.unique_integer([:positive]), role: :assistant, content: content}

@@ -8,7 +8,10 @@ defmodule HexGh.Agent do
   @system_prompt """
   You are a helpful research assistant specializing in Elixir/Erlang packages and GitHub projects.
   You MUST use one of the available tools to answer every query. Pick the most relevant tool.
-  Always provide clear, well-formatted Markdown responses.
+  Respond in plain text. Use short paragraphs. No Markdown formatting, no emojis, no headers, no bullet lists.
+  For package results, always include: name, description, latest version, last updated date, total downloads, recent downloads, and hex.pm link.
+  For GitHub issues, always include: title, URL, state, and creation date.
+  Include up to 5 most relevant results.
   """
 
   def process_query(user_prompt, opts \\ []) do
@@ -18,9 +21,10 @@ defmodule HexGh.Agent do
          {:ok, context} <- build_memory_context(user_prompt),
          {:ok, tool_call} <- intent_pass(user_prompt, context),
          {:ok, tool_result} <- dispatch_tool(tool_call) do
-      # ToBeRemoved: check what is going on
-      # dbg(Jason.decode!(tool_result)).
       synthesis_pass(user_prompt, tool_call, tool_result)
+    else
+      {:error, {:out_of_scope, message}} -> {:ok, message}
+      error -> error
     end
   end
 

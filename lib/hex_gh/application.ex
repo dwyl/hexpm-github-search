@@ -21,7 +21,14 @@ defmodule HexGh.Application do
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: HexGh.Supervisor]
-    Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children, opts)
+
+    # Register Telegram webhook after supervision tree is up (Finch must be running)
+    if webhook_url = Application.get_env(:hex_gh, :telegram_webhook_url) do
+      HexGh.Telegram.register_webhook(webhook_url)
+    end
+
+    result
   end
 
   # Tell Phoenix to update the endpoint configuration

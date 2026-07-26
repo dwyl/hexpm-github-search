@@ -148,6 +148,11 @@ defmodule HexGh.Integration.PipelineTest do
       assert response =~ ~r/[Bb]andit/
     end
 
+    test "out_of_scope query returns canned response without synthesis" do
+      assert {:ok, response} = HexGh.Agent.process_query("what time is it?")
+      assert response =~ "can't process this"
+    end
+
     test "Pipeline.run delegates to process_query" do
       assert {:ok, response} =
                HexGh.Agent.Pipeline.run(%{

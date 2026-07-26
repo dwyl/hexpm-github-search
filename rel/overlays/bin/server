@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+PHX_SERVER=true exec /app/bin/hex_gh start
