@@ -2,7 +2,7 @@ services:
   hexgh:
     build: .
     ports:
-      - "4000:4000"
+      - "${PORT:-4001}:4000"
     volumes:
       - hexgh_data:/app/data
     env_file:
