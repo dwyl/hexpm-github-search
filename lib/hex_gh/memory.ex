@@ -98,7 +98,8 @@ defmodule HexGh.Memory do
         """,
         [{:blob, blob}, limit]
       )
-      |> dbg()
+
+    # |> dbg()
 
     case Basic.rows(result) do
       {:ok, rows, _cols} ->

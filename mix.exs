@@ -12,7 +12,7 @@ defmodule HexGh.MixProject do
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
-      dialyzer: [plt_add_apps: [:mix]],
+      dialyzer: [plt_add_apps: [:mix]]
     ]
   end
 
@@ -70,7 +70,7 @@ defmodule HexGh.MixProject do
        sparse: "optimized",
        app: false,
        compile: false,
-       depth: 1},
+       depth: 1}
     ]
   end
 

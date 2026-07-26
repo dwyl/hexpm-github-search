@@ -2,7 +2,6 @@
    https://tailwindcss.com/docs/configuration */
 
 @import "tailwindcss" source(none);
-@import "phoenix-colocated/hex_gh/colocated.css";
 @source "../css";
 @source "../js";
 @source "../../lib/hex_gh_web";

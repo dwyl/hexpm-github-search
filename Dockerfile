@@ -19,8 +19,8 @@ COPY mix.exs mix.lock ./
 RUN mix deps.get --only prod
 RUN mkdir config
 COPY config/config.exs config/prod.exs config/
-RUN mix deps.compile
-
+RUN mix deps.compile || mix deps.compile telegex --force
+RUN mix assets.setup
 COPY priv priv
 COPY lib lib
 COPY assets assets
@@ -52,6 +52,7 @@ WORKDIR /app
 
 RUN chown nobody /app
 COPY --from=builder --chown=nobody:root /app/_build/prod/rel/hex_gh ./
+RUN chmod +x /app/bin/server
 
 # Data directory for SQLite memory DB (mount a volume here)
 RUN mkdir -p /app/data && chown nobody /app/data

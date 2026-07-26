@@ -132,7 +132,7 @@ defmodule HexGh.Integration.PipelineTest do
 
       # Query specifically for HTTP server — Bandit fact must surface
       assert {:ok, context} = HexGh.Agent.build_memory_context("what HTTP server does Elixir use")
-      dbg(context)
+      # dbg(context)
       assert context =~ "<user_saved_knowledge>"
       assert context =~ "Bandit"
     end
