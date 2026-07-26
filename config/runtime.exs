@@ -31,7 +31,7 @@ config :hex_gh,
   mistral_embed_model: System.get_env("MISTRAL_EMBED_MODEL", "mistral-embed"),
   mistral_embed_dimensions: String.to_integer(System.get_env("MISTRAL_EMBED_DIMENSIONS", "1024")),
   mistral_transcription_model:
-    System.get_env("MISTRAL_TRANSCRIPTION_MODEL", "mistral-large-latest"),
+    System.get_env("MISTRAL_TRANSCRIPTION_MODEL", "voxtral-mini-latest"),
   # External APIs
   github_api_url: System.get_env("GITHUB_API_URL", "https://api.github.com"),
   github_token: System.get_env("GITHUB_TOKEN"),
