@@ -61,8 +61,18 @@ graph TD
 - **Async Telegram** — `Task.Supervisor` dispatches pipeline work so the webhook returns 200 immediately, avoiding Telegram's ~10s retry timeout.
 - **GenServer for Memory** — SQLite connection stays open in GenServer state. The GenServer serializes access, matching SQLite's single-writer model.
 - **sqlite-vec storage** — uses a `vec0` virtual table for KNN indexing. Vectors are passed as little-endian float32 binary blobs. KNN queries use `WHERE embedding MATCH ?blob AND k = ?limit` (not SQL `LIMIT`).
-- **RAG distance threshold** — results with cosine distance above 0.7 are filtered out before prompt injection, preventing irrelevant memories from polluting the context.
+- **RAG distance threshold** — results with cosine distance above 0.65 are filtered out before prompt injection, preventing irrelevant memories from polluting the context.
 - **No ExMCP GenHandler** — `MCPServer` is a plain module with `tool_schemas/0` and `call_tool/2`. The Agent orchestrates tool calls directly via the Mistral API.
+
+### Save_memory / Enhance search with RAG memory
+
+You can save facts:  send a message "Remember that Bandit is the default Elixir HTTP server" or "Save that Bandit is the default Elixir webserver".
+This will be saved as a vector, and further injected into the prompt if the embedding computation of a user's message is close. It will tend to promote to return Bandit rather than Cowboy.
+
+There is threshold (cosine < 0.65 and top 3 hints). However, there is a limitation with RAG explained below.
+
+> [!WARNING]
+> Firstly, one should preferably only save facts and not some preferences because injecting a preference can mislead the LLM if old preferences bleed into unrelated queries. But facts can also become outdated. For example, a default implementation can be changed which makes a statement like "the default package for na HTTP server is Bandit" become false. Another example: saving "I'm interested in LiveView issues in phoenixframework" would then surface on a query like "find issues about database performance in ecto" — and the LLM might still search phoenixframework instead of elixir-ecto.
 
 ## Configuration
 
@@ -159,7 +169,7 @@ flowchart TD
 
 _Caddyfile_ rule:
 
-```json
+```caddyfile
 hexgh.nlex.uk {
     reverse_proxy localhost:4001
 }
