@@ -60,6 +60,11 @@ config :phoenix, :json_library, Jason
 config :hammer,
   backend: {Hammer.Backend.ETS, [expiry_ms: 60_000 * 10, cleanup_interval_ms: 60_000]}
 
+# Rate limits: window in ms, max requests per window
+config :hex_gh, :rate_limits,
+  agent: [window_ms: 60_000, limit: 20],
+  mcp: [window_ms: 60_000, limit: 60]
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

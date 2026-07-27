@@ -4,10 +4,11 @@ AI research assistant for Elixir packages and GitHub issues, with long-term vect
 
 ## What it does
 
-Two entry points:
+Three entry points:
 
 - **LiveView chat UI** at `https://hexgh.nlex.uk` <—> `http://localhost:4000` synchronous pipeline, blocks until response
 - **Telegram webhook** at @HexGithub <-> `POST /webhook/telegram` — async via Task.Supervisor to avoid Telegram retry on slow responses
+- **MCP server** at `https://hexgh.nlex.uk/mcp` — exposes public tools (Hex.pm search, GitHub issue search) to external MCP clients like Claude Code
 
 Natural language queries go through a 5-step pipeline:
 
@@ -62,7 +63,7 @@ graph TD
 - **GenServer for Memory** — SQLite connection stays open in GenServer state. The GenServer serializes access, matching SQLite's single-writer model.
 - **sqlite-vec storage** — uses a `vec0` virtual table for KNN indexing. Vectors are passed as little-endian float32 binary blobs. KNN queries use `WHERE embedding MATCH ?blob AND k = ?limit` (not SQL `LIMIT`).
 - **RAG distance threshold** — results with cosine distance above 0.65 are filtered out before prompt injection, preventing irrelevant memories from polluting the context.
-- **No ExMCP GenHandler** — `MCPServer` is a plain module with `tool_schemas/0` and `call_tool/2`. The Agent orchestrates tool calls directly via the Mistral API.
+- **Dual MCP servers** — `MCPServer` (internal, all tools) is used by the Agent for Mistral tool calling. `MCPServer.Public` (public, search tools only) is exposed via HTTP+SSE for external clients like Claude Code.
 
 ### Save_memory / Enhance search with RAG memory
 
@@ -92,6 +93,7 @@ All settings are in `config/runtime.exs`, read from environment variables:
 | `MEMORY_DB_PATH` | `priv/memory.db` | SQLite database path |
 | `SQLITE_VEC_PATH` | auto-detected | Path to sqlite-vec extension (.so/.dylib) |
 | `MEMORY_DISTANCE_THRESHOLD` | `0.65` | Cosine distance cutoff for RAG results |
+| `MCP_API_KEY` | optional | Bearer token for public MCP endpoint (open access if unset) |
 | `TELEGRAM_BOT_TOKEN` | generate @botFather | Telegram bot token (enables webhook) |
 | `TELEGRAM_SECRET_TOKEN` | required if bot token set | Webhook validation secret |
 | `TELEGRAM_WEBHOOK_URL` | your-domain.com | Public base URL for webhook (e.g. `https://your-tunnel.domain`) |
@@ -197,6 +199,70 @@ ubuntu@vps-yyyyyy> docker stats
 # 170MB
 ```
 
+## MCP Server (for Claude Code / external clients)
+
+The app exposes public tools via the [Model Context Protocol](https://modelcontextprotocol.io/) at `https://hexgh.nlex.uk/mcp`. Internal tools (`save_memory`, `out_of_scope`) are not exposed.
+
+### Authentication
+
+The endpoint is protected by a Bearer token validated with `Plug.Crypto.secure_compare/2` (constant-time comparison). Set `MCP_API_KEY` in your `.env` to enable it. When unset, the endpoint is open.
+
+The request flow is:
+
+```
+Client → Authorization: Bearer <MCP_API_KEY> → MCPAuth plug (secure_compare) → MCPRateLimit (60 req/min/IP) → ExMCP.HttpPlug
+```
+
+### Connect from Claude Code
+
+Add to your Claude Code MCP settings (`~/.claude.json` or project `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "hexgh": {
+      "url": "https://hexgh.nlex.uk/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer your-mcp-api-key"
+      }
+    }
+  }
+}
+```
+
+For local development (no auth if `MCP_API_KEY` is unset):
+
+```json
+{
+  "mcpServers": {
+    "hexgh": {
+      "url": "http://localhost:4000/mcp/sse"
+    }
+  }
+}
+```
+
+Or use the stdio transport (no web server needed, no auth):
+
+```json
+{
+  "mcpServers": {
+    "hexgh": {
+      "command": "mix",
+      "args": ["mcp.server"],
+      "cwd": "/path/to/hex_gh"
+    }
+  }
+}
+```
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `search_hex_packages` | Search Elixir packages on Hex.pm by keyword |
+| `search_github_issues` | Search GitHub issues/PRs across an organization (public repos only) |
+
 ## Testing
 
 Integration tests use real API calls (not mocked):
@@ -227,7 +293,9 @@ lib/
 │   ├── ai/
 │   │   ├── mistral.ex        # Mistral API client (chat + embeddings)
 │   │   └── transcriber.ex    # Audio transcription (Mistral Voxtral / local Whisper)
-│   ├── mcp_server.ex         # Tool schemas + dispatch router
+│   ├── mcp_server.ex         # Internal tool schemas + dispatch (all tools)
+│   ├── mcp_server/
+│   │   └── public.ex         # Public MCP server (ExMCP DSL, HTTP+SSE)
 │   ├── memory.ex             # GenServer wrapping SQLite + sqlite-vec
 │   ├── telegram.ex           # Telegram API helpers
 │   ├── telegram/handler.ex   # Webhook update processor

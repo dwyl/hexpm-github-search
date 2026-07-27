@@ -26,6 +26,21 @@ defmodule HexGhWeb.Router do
     post "/telegram", WebhookController, :telegram
   end
 
+  pipeline :mcp do
+    plug HexGhWeb.Plugs.MCPAuth
+    plug HexGhWeb.Plugs.MCPRateLimit
+  end
+
+  # MCP server for external clients (Claude Code, etc.)
+  scope "/mcp" do
+    pipe_through :mcp
+
+    forward "/", ExMCP.HttpPlug,
+      handler: HexGh.MCPServer.Public,
+      server_info: %{name: "hexgh", version: "0.1.0"},
+      validate_origin: false
+  end
+
   # Enable LiveDashboard in development
   if Application.compile_env(:hex_gh, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put

@@ -1,11 +1,15 @@
 defmodule HexGh.MCPServer do
-  @moduledoc false
+  @moduledoc """
+  Internal MCP tool registry used by the app's own agent.
+  Public tools are also exposed externally via `HexGh.MCPServer.Public`.
+  """
 
   alias HexGh.Tools.GitHub
   alias HexGh.Tools.Hex
   alias HexGh.Tools.SaveMemory
 
-  @tools %{
+  # Tools exposed to external MCP clients (Claude Code, etc.)
+  @public_tools %{
     "search_github_issues" => %{
       type: "function",
       function: %{
@@ -34,7 +38,11 @@ defmodule HexGh.MCPServer do
           required: ["query"]
         }
       }
-    },
+    }
+  }
+
+  # Tools only available to the internal agent
+  @internal_tools %{
     "save_memory" => %{
       type: "function",
       function: %{
@@ -71,7 +79,10 @@ defmodule HexGh.MCPServer do
     }
   }
 
+  @tools Map.merge(@public_tools, @internal_tools)
+
   def tool_schemas, do: Map.values(@tools)
+  def public_tool_schemas, do: Map.values(@public_tools)
 
   def call_tool("search_github_issues", %{"org" => org, "query" => query}) do
     GitHub.search_issues(org, query)

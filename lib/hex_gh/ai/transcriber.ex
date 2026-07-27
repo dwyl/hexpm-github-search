@@ -18,10 +18,8 @@ defmodule HexGh.AI.Transcriber do
   end
 
   def transcribe(audio_url) when is_binary(audio_url) do
-    with {:ok, %{status: 200, body: audio_data}} <-
-           Req.get(audio_url, receive_timeout: 15_000, finch: HexGh.Finch) do
-      transcribe_audio(audio_data)
-    else
+    case Req.get(audio_url, receive_timeout: 15_000, finch: HexGh.Finch) do
+      {:ok, %{status: 200, body: audio_data}} -> transcribe_audio(audio_data)
       {:ok, %{status: status}} -> {:error, {:download_failed, status}}
       {:error, reason} -> {:error, reason}
     end

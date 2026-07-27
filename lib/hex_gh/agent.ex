@@ -109,7 +109,10 @@ defmodule HexGh.Agent do
   end
 
   defp check_rate_limit(user_id) do
-    case Hammer.check_rate("mistral:#{user_id}", 60_000, 20) do
+    config = Application.get_env(:hex_gh, :rate_limits)[:agent]
+    {window_ms, limit} = {config[:window_ms], config[:limit]}
+
+    case Hammer.check_rate("mistral:#{user_id}", window_ms, limit) do
       {:allow, _count} -> :ok
       {:deny, _limit} -> {:error, :rate_limited}
     end

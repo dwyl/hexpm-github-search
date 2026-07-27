@@ -40,7 +40,9 @@ config :hex_gh,
   memory_db_path: System.get_env("MEMORY_DB_PATH", "priv/memory.db"),
   sqlite_vec_path: System.get_env("SQLITE_VEC_PATH"),
   # RAG: discard memory results with cosine distance above this threshold
-  memory_distance_threshold: String.to_float(System.get_env("MEMORY_DISTANCE_THRESHOLD", "0.65"))
+  memory_distance_threshold: String.to_float(System.get_env("MEMORY_DISTANCE_THRESHOLD", "0.65")),
+  # MCP: optional Bearer token for public MCP endpoint (open access if unset)
+  mcp_api_key: System.get_env("MCP_API_KEY")
 
 # Telegram bot configuration (optional — bot starts only if token is set)
 telegram_bot_token = System.get_env("TELEGRAM_BOT_TOKEN")
