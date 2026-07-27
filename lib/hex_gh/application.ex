@@ -39,20 +39,24 @@ defmodule HexGh.Application do
     :telemetry.attach(
       "mcp-http-request",
       [:ex_mcp, :server, :http, :request],
-      fn _event, _measurements, metadata, _config ->
-        Logger.info("MCP HTTP #{metadata[:method]} #{metadata[:path]}")
-      end,
+      &handle_mcp_event/4,
       nil
     )
 
     :telemetry.attach(
       "mcp-http-response",
       [:ex_mcp, :server, :http, :response],
-      fn _event, _measurements, metadata, _config ->
-        Logger.info("MCP HTTP response status=#{metadata[:status]}")
-      end,
+      &handle_mcp_event/4,
       nil
     )
+  end
+
+  def handle_mcp_event([:ex_mcp, :server, :http, :request], _measurements, metadata, _config) do
+    Logger.info("MCP HTTP #{metadata[:method]} #{metadata[:path]}")
+  end
+
+  def handle_mcp_event([:ex_mcp, :server, :http, :response], _measurements, metadata, _config) do
+    Logger.info("MCP HTTP response status=#{metadata[:status]}")
   end
 
   @impl true
