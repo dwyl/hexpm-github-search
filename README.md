@@ -4,9 +4,14 @@ AI research assistant for Elixir packages and GitHub issues, with long-term vect
 
 ## What it does
 
+Two entry points:
+
+- **LiveView chat UI** at `https://hexgh.nlex.uk` <—> `http://localhost:4000` synchronous pipeline, blocks until response
+- **Telegram webhook** at @HexGithub <-> `POST /webhook/telegram` — async via Task.Supervisor to avoid Telegram retry on slow responses
+
 Natural language queries go through a 5-step pipeline:
 
-```
+```txt
 User input (text or voice)
   → Audio transcription (if voice, via Mistral Voxtral)
   → RAG memory lookup (embed query → sqlite-vec top-3 similarity search → inject into prompt)
@@ -15,11 +20,6 @@ User input (text or voice)
   → Synthesis pass (Mistral summarizes tool results into Markdown)
   → Response
 ```
-
-Two entry points:
-
-- **LiveView chat UI** at `http://localhost:4000` — synchronous pipeline, blocks until response
-- **Telegram webhook** at `POST /webhook/telegram` — async via Task.Supervisor to avoid Telegram retry on slow responses
 
 ## Architecture
 
@@ -81,12 +81,14 @@ All settings are in `config/runtime.exs`, read from environment variables:
 | `HEX_API_URL` | `https://hex.pm/api` | Hex.pm API base URL |
 | `MEMORY_DB_PATH` | `priv/memory.db` | SQLite database path |
 | `SQLITE_VEC_PATH` | auto-detected | Path to sqlite-vec extension (.so/.dylib) |
-| `MEMORY_DISTANCE_THRESHOLD` | `0.7` | Cosine distance cutoff for RAG results |
-| `TELEGRAM_BOT_TOKEN` | optional | Telegram bot token (enables webhook) |
+| `MEMORY_DISTANCE_THRESHOLD` | `0.65` | Cosine distance cutoff for RAG results |
+| `TELEGRAM_BOT_TOKEN` | generate @botFather | Telegram bot token (enables webhook) |
 | `TELEGRAM_SECRET_TOKEN` | required if bot token set | Webhook validation secret |
-| `TELEGRAM_WEBHOOK_URL` | optional | Public base URL for webhook (e.g. `https://your-tunnel.domain`) |
+| `TELEGRAM_WEBHOOK_URL` | your-domain.com | Public base URL for webhook (e.g. `https://your-tunnel.domain`) |
 
 ## Setup
+
+### Local dev
 
 ```bash
 # Dependencies
@@ -96,12 +98,93 @@ mix deps.get
 pip3 install sqlite-vec
 # Or set SQLITE_VEC_PATH to the .so/.dylib location
 
-# Environment
-cp .env.example .env
-# Edit .env with your MISTRAL_API_KEY
-
 # Run
 source .env && mix phx.server
+
+# check the container build before deploy
+source .env && docker compose up --build -d
+docker compose logs hexgh
+```
+
+### Deploy VPS
+
+System: `ubuntu`
+
+Copy the local _.env_ to the VPS (no Docker Secrets used here)
+
+```bash
+scp .env ubuntu@vps-ip:/go-to-git-clone-folder/
+```
+
+### Deployment: my current settings
+
+This app uses `Cloudflare` in front of a VPS with "orange" (DDos, hide real IP) and deployed for each subdomain.
+
+`Caddy` is used, is the TLS termination, and is used as reverse-proxy since I have several apps & routes (MinIO dashboard, MinIO/S3 server, Grafana, two apps).
+
+```mermaid
+flowchart TD
+    Internet["Internet"]
+    Cloudflare["Cloudflare"]
+
+    subgraph VPS["VPS Instance"]
+        direction TB
+        UFW["UFW Firewall<br/>Allow :80, :443"]
+        Caddy["Caddy Reverse Proxy<br/>TLS Termination"]
+        App1["App 1<br/>Listening on :4000"]
+        App2["App 2<br/>Listening on :4001"]
+
+        UFW -->|:80, :443| Caddy
+        Caddy -->|localhost:4000| App1
+        Caddy -->|localhost:4001| App2
+    end
+
+    Internet -->|HTTPS request| Cloudflare
+    Cloudflare -->|HTTPS to origin| UFW
+
+    classDef internet fill:#ecfeff,stroke:#22d3ee
+    classDef cloudflare fill:#fff7ed,stroke:#fb923c,stroke-width:3px
+    classDef firewall fill:#fef2f2,stroke:#f87171
+    classDef proxy fill:#f5f3ff,stroke:#a78bfa
+    classDef app fill:#f0fdf4,stroke:#4ade80
+    classDef vps fill:#ffffff,stroke:#fb923c,stroke-width:2px
+
+    class Internet internet
+    class Cloudflare cloudflare
+    class UFW firewall
+    class Caddy proxy
+    class App1,App2 app
+    class VPS vps
+```
+
+_Caddyfile_ rule:
+
+```json
+hexgh.nlex.uk {
+    reverse_proxy localhost:4001
+}
+```
+
+Copy the Caddyfile into the VPS and start Caddy:
+
+```bash
+localhost> scp Caddyfile.deploy ubuntu@xx.xx.xx.xx:/tmp/Caddyfile
+localhost> ssh ubuntu@xx.xx.xx.xx
+ubuntu@vps-yyyyyy> cp /tmp/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+```
+
+Deploy:
+
+```bash
+ubuntu@vps-yyyyyy> docker compose up --build
+```
+
+Check:
+
+```bash
+ubuntu@vps-yyyyyy> docker compose logs hexgh
+ubuntu@vps-yyyyyy> docker stats
+# 170MB
 ```
 
 ## Testing
@@ -124,7 +207,9 @@ A separate test DB (`priv/test_memory.db`) is used and wiped on each run.
 
 ## Project structure
 
-```
+`tree`:
+
+```txt
 lib/
 ├── hex_gh/
 │   ├── agent.ex              # 5-step pipeline orchestrator

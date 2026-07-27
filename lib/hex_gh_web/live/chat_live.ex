@@ -2,6 +2,7 @@ defmodule HexGhWeb.ChatLive do
   use HexGhWeb, :live_view
 
   alias HexGh.Agent.Pipeline
+  require Logger
 
   @impl true
   def mount(_params, _session, socket) do
@@ -35,8 +36,6 @@ defmodule HexGhWeb.ChatLive do
 
   @impl true
   def handle_info({:run_pipeline, text}, socket) do
-    require Logger
-
     content =
       case Pipeline.run(%{text: text, is_audio: false}) do
         {:ok, response} ->

@@ -29,20 +29,28 @@ defmodule HexGh.Agent do
   end
 
   def build_memory_context(prompt) do
-    threshold = Application.get_env(:hex_gh, :memory_distance_threshold, 0.7)
-
     with {:ok, embedding} <- Mistral.embed(prompt),
          {:ok, results} when results != [] <- Memory.search_relevant(embedding, 3) do
-      relevant = Enum.filter(results, fn %{distance: d} -> d < threshold end)
-
-      if relevant == [] do
-        {:ok, ""}
-      else
-        context = Enum.map_join(relevant, "\n", fn %{content: c} -> "- #{c}" end)
-        {:ok, "<user_saved_knowledge>\n#{context}\n</user_saved_knowledge>"}
-      end
+      build_xml(results)
     else
       _ -> {:ok, ""}
+    end
+  end
+
+  defp build_xml(results) do
+    threshold =
+      Application.get_env(:hex_gh, :memory_distance_threshold)
+
+    relevant =
+      Enum.filter(results, fn %{distance: d} -> d < threshold end)
+
+    if relevant == [] do
+      {:ok, ""}
+    else
+      context =
+        Enum.map_join(relevant, "\n", fn %{content: c} -> "- #{c}" end)
+
+      {:ok, "<user_saved_knowledge>\n#{context}\n</user_saved_knowledge>"}
     end
   end
 
