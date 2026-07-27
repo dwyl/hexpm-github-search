@@ -46,5 +46,6 @@ npm-debug.log
 .claude
 .elixir_ls
 .expert
+.mcp.json
 
 
