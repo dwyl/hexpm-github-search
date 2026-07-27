@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "hexgh": {
+      "url": "https://hexgh.nlex.uk/mcp/sse",
+      "headers": {
+        "Authorization": "edc8d9d40685fbe50f2d48bf7c97b24ff63c33906b995390e1dd8d8bcf346abf"
+      }
+    }
+  }
+}
