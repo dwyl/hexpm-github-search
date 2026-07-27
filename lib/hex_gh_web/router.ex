@@ -42,7 +42,7 @@ defmodule HexGhWeb.Router do
   scope "/mcp" do
     pipe_through :mcp
 
-    forward "/", ExMCP.HttpPlug,
+    forward "/", HexGhWeb.Plugs.MCPSSE,
       handler: HexGh.MCPServer.Public,
       server_info: %{name: "hexgh", version: "0.1.0"},
       validate_origin: false,
