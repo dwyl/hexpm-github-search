@@ -31,6 +31,13 @@ defmodule HexGhWeb.Router do
     plug HexGhWeb.Plugs.MCPRateLimit
   end
 
+  # MCP health check (no auth required)
+  scope "/mcp" do
+    pipe_through :api
+
+    get "/health", HexGhWeb.MCPHealthController, :health
+  end
+
   # MCP server for external clients (Claude Code, etc.)
   scope "/mcp" do
     pipe_through :mcp
@@ -38,7 +45,9 @@ defmodule HexGhWeb.Router do
     forward "/", ExMCP.HttpPlug,
       handler: HexGh.MCPServer.Public,
       server_info: %{name: "hexgh", version: "0.1.0"},
-      validate_origin: false
+      validate_origin: false,
+      cors_enabled: true,
+      allowed_origins: :any
   end
 
   # Enable LiveDashboard in development

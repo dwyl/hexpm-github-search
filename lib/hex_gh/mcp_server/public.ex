@@ -9,6 +9,8 @@ defmodule HexGh.MCPServer.Public do
 
   use ExMCP.Server
 
+  require Logger
+
   alias HexGh.Tools.GitHub
   alias HexGh.Tools.Hex
 
@@ -47,6 +49,17 @@ defmodule HexGh.MCPServer.Public do
       },
       required: ["org", "query"]
     })
+  end
+
+  @impl true
+  def handle_initialize(params, state) do
+    client_info = Map.get(params, "clientInfo", %{})
+
+    Logger.info(
+      "MCP client connected: #{inspect(client_info["name"])} v#{inspect(client_info["version"])}"
+    )
+
+    {:ok, %{}, state}
   end
 
   @impl true

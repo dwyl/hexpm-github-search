@@ -6,6 +6,7 @@ defmodule HexGhWeb.Plugs.MCPAuth do
   """
 
   import Plug.Conn
+  require Logger
 
   @behaviour Plug
 
@@ -14,9 +15,21 @@ defmodule HexGhWeb.Plugs.MCPAuth do
 
   @impl true
   def call(conn, _opts) do
+    Logger.debug(
+      "MCP request: #{conn.method} #{conn.request_path} auth=#{has_auth_header?(conn)}"
+    )
+
     case Application.get_env(:hex_gh, :mcp_api_key) do
       nil -> conn
       expected_key -> verify_bearer(conn, expected_key)
+    end
+  end
+
+  defp has_auth_header?(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> _] -> "bearer"
+      [_] -> "other"
+      [] -> "none"
     end
   end
 

@@ -7,8 +7,12 @@ defmodule HexGh.Application do
 
   use Application
 
+  require Logger
+
   @impl true
   def start(_type, _args) do
+    attach_mcp_telemetry()
+
     children =
       [
         HexGhWeb.Telemetry,
@@ -29,6 +33,26 @@ defmodule HexGh.Application do
     end
 
     result
+  end
+
+  defp attach_mcp_telemetry do
+    :telemetry.attach(
+      "mcp-http-request",
+      [:ex_mcp, :server, :http, :request],
+      fn _event, _measurements, metadata, _config ->
+        Logger.info("MCP HTTP #{metadata[:method]} #{metadata[:path]}")
+      end,
+      nil
+    )
+
+    :telemetry.attach(
+      "mcp-http-response",
+      [:ex_mcp, :server, :http, :response],
+      fn _event, _measurements, metadata, _config ->
+        Logger.info("MCP HTTP response status=#{metadata[:status]}")
+      end,
+      nil
+    )
   end
 
   @impl true
