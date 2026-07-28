@@ -27,7 +27,7 @@ defmodule HexGhWeb.Router do
   end
 
   pipeline :mcp do
-    # plug HexGhWeb.Plugs.MCPAuth
+    plug HexGhWeb.Plugs.MCPApiKey
     plug HexGhWeb.Plugs.MCPRateLimit
   end
 
@@ -40,7 +40,6 @@ defmodule HexGhWeb.Router do
   scope "/mcp" do
     pipe_through :mcp
 
-    # forward "/", HexGhWeb.Plugs.MCPPlug
     forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: HexGh.MCP.Server
   end
 

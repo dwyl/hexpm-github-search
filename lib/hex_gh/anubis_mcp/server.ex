@@ -12,9 +12,8 @@ defmodule HexGh.MCP.Server do
 
   @impl true
   def init(_client_info, frame) do
-    Logger.info("Anubis MCP.Server init")
-    %Anubis.Server.Frame{tools: tools} = frame
-    Logger.info("Anubis Init: tools: #{inspect(tools)}")
+    compile_tools = __MODULE__.__components__(:tool) |> Enum.map(& &1.name)
+    Logger.info("Anubis MCP.Server init — compile-time tools: #{inspect(compile_tools)}")
     {:ok, frame}
   end
 end
