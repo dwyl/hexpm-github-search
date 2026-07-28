@@ -54,12 +54,16 @@ defmodule HexGh.MCPServer.Public do
   @impl true
   def handle_initialize(params, state) do
     client_info = Map.get(params, "clientInfo", %{})
+    client_version = Map.get(params, "protocolVersion", "2025-03-26")
 
     Logger.info(
-      "MCP client connected: #{inspect(client_info["name"])} v#{inspect(client_info["version"])}"
+      "MCP client connected: #{inspect(client_info["name"])} v#{inspect(client_info["version"])} protocol=#{client_version}"
     )
 
-    {:ok, %{}, state}
+    # Echo back the client's protocol version so version negotiation works.
+    # ExMCP's MethodHandlers defaults to 2025-11-25 but only uses put_new,
+    # so setting it here takes precedence.
+    {:ok, %{"protocolVersion" => client_version}, state}
   end
 
   @impl true
