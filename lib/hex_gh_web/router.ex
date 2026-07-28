@@ -31,18 +31,19 @@ defmodule HexGhWeb.Router do
     plug HexGhWeb.Plugs.MCPRateLimit
   end
 
-  # OAuth discovery (no auth) - must return JSON 404 so MCP clients
-  # can detect "no OAuth" and fall back to Bearer token auth.
+  # MCP OAuth discovery + registration — no auth, no :accepts check.
+  # Claude Code probes these before authenticating; they must return JSON 404
+  # (not plain text) so the client falls back to Bearer token auth.
   scope "/.well-known" do
-    pipe_through :api
-
     get "/*path", HexGhWeb.MCPHealthController, :not_found
+  end
+
+  scope "/" do
+    post "/register", HexGhWeb.MCPHealthController, :not_found
   end
 
   # MCP health check and OAuth discovery (no auth required)
   scope "/mcp" do
-    pipe_through :api
-
     get "/health", HexGhWeb.MCPHealthController, :health
     get "/.well-known/*path", HexGhWeb.MCPHealthController, :not_found
   end
