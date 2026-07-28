@@ -12,7 +12,7 @@ defmodule HexGh.MCP.Server do
 
   @impl true
   def init(_client_info, frame) do
-    Logger.info("Anubis MCP.Server init: #{inspect(frame)}")
+    Logger.info("Anubis MCP.Server init: #{inspect(frame.tools)}")
     {:ok, frame}
   end
 end
