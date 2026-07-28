@@ -31,20 +31,31 @@ defmodule HexGhWeb.Router do
     plug HexGhWeb.Plugs.MCPRateLimit
   end
 
-  # MCP health check (no auth required)
+  # OAuth discovery (no auth) - must return JSON 404 so MCP clients
+  # can detect "no OAuth" and fall back to Bearer token auth.
+  scope "/.well-known" do
+    pipe_through :api
+
+    get "/*path", HexGhWeb.MCPHealthController, :not_found
+  end
+
+  # MCP health check and OAuth discovery (no auth required)
   scope "/mcp" do
     pipe_through :api
 
     get "/health", HexGhWeb.MCPHealthController, :health
+    get "/.well-known/*path", HexGhWeb.MCPHealthController, :not_found
   end
 
   # MCP server for external clients (Claude Code, etc.)
+  # Uses streamable HTTP (POST only) — no SSE needed.
   scope "/mcp" do
     pipe_through :mcp
 
-    forward "/", HexGhWeb.Plugs.MCPSSE,
+    forward "/", ExMCP.HttpPlug,
       handler: HexGh.MCPServer.Public,
       server_info: %{name: "hexgh", version: "0.1.0"},
+      sse_enabled: false,
       validate_origin: false,
       cors_enabled: true,
       allowed_origins: :any
