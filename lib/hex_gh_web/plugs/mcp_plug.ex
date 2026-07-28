@@ -7,6 +7,12 @@ defmodule HexGhWeb.Plugs.MCPPlug do
   def init(opts), do: opts
 
   @impl true
+  def call(%Plug.Conn{path_info: [".well-known" | _]} = conn, _opts) do
+    conn
+    |> Plug.Conn.send_resp(404, "Not Found")
+    |> Plug.Conn.halt()
+  end
+
   def call(conn, _opts) do
     opts =
       Anubis.Server.Transport.StreamableHTTP.Plug.init(

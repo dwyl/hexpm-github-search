@@ -20,7 +20,7 @@ RUN mix deps.get --only prod
 
 RUN mkdir config
 COPY config/config.exs config/prod.exs config/
-RUN mix deps.compile --force || mix deps.compile telegex --force
+RUN mix deps.compile || mix deps.compile telegex --force
 RUN mix assets.setup
 COPY priv priv
 COPY lib lib
