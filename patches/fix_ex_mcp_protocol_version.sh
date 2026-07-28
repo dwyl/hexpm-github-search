@@ -17,7 +17,7 @@ sed -i.bak 's/"protocolVersion" => @default_protocol_version,/"protocolVersion" 
 sed -i.bak 's/defp add_protocol_version_header(conn) do/defp client_protocol_version(conn) do\
     case get_req_header(conn, "mcp-protocol-version") do\
       [v] when is_binary(v) and v != "" -> v\
-      _ -> VersionRegistry.latest_version()\
+      _ -> "2025-03-26"\
     end\
   end\
 \
