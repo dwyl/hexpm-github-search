@@ -17,6 +17,12 @@ RUN mix local.hex --force && mix local.rebar --force
 
 COPY mix.exs mix.lock ./
 RUN mix deps.get --only prod
+
+# Patch ExMCP to echo back the client's protocol version instead of hardcoding 2025-11-25.
+# This fixes Claude Code refusing to register tools due to version mismatch.
+COPY patches patches
+RUN sh patches/fix_ex_mcp_protocol_version.sh
+
 RUN mkdir config
 COPY config/config.exs config/prod.exs config/
 RUN mix deps.compile --force || mix deps.compile telegex --force
