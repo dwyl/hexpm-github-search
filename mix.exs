@@ -42,6 +42,10 @@ defmodule HexGh.MixProject do
   defp deps do
     [
       {:exqlite, "~> 0.39.0"},
+      {:anubis_mcp,
+       git: "https://github.com/jfim/anubis-mcp.git",
+       branch: "non-upstreamed-fixes",
+       override: true},
       {:ex_mcp, "~> 0.12.0"},
       {:telegex, "~> 1.8"},
       {:multipart, "~> 0.4"},

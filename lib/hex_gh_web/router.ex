@@ -31,36 +31,21 @@ defmodule HexGhWeb.Router do
     plug HexGhWeb.Plugs.MCPRateLimit
   end
 
-  # MCP OAuth discovery — return 404 so Claude Code skips OAuth and
-  # connects without authentication.
+  # MCP OAuth discovery — return 404 so Claude Code skips OAuth
   scope "/.well-known" do
     get "/*path", HexGhWeb.MCPHealthController, :not_found
   end
 
-  scope "/" do
-    post "/register", HexGhWeb.MCPHealthController, :not_found
-  end
-
-  # MCP health check and OAuth discovery (no auth required)
+  # MCP health check (no auth required)
   scope "/mcp" do
     get "/health", HexGhWeb.MCPHealthController, :health
-    get "/.well-known/*path", HexGhWeb.MCPHealthController, :not_found
-    # Per MCP spec, GET on the MCP endpoint returns 405 when SSE is disabled
-    get "/", HexGhWeb.MCPHealthController, :method_not_allowed
   end
 
   # MCP server for external clients (Claude Code, etc.)
-  # Streamable HTTP: POST for JSON-RPC, GET returns 405 (like Context7).
   scope "/mcp" do
     pipe_through :mcp
 
-    forward "/", ExMCP.HttpPlug,
-      handler: HexGh.MCPServer.Public,
-      server_info: %{name: "hexgh", version: "0.1.0"},
-      sse_enabled: false,
-      validate_origin: false,
-      cors_enabled: true,
-      allowed_origins: :any
+    forward "/", HexGhWeb.Plugs.MCPPlug
   end
 
   # Enable LiveDashboard in development
