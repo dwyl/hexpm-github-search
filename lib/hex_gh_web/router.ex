@@ -27,7 +27,7 @@ defmodule HexGhWeb.Router do
   end
 
   pipeline :mcp do
-    plug HexGhWeb.Plugs.MCPAuth
+    # plug HexGhWeb.Plugs.MCPAuth
     plug HexGhWeb.Plugs.MCPRateLimit
   end
 
