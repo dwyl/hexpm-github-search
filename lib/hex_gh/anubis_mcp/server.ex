@@ -1,5 +1,6 @@
 defmodule HexGh.MCP.Server do
   @moduledoc false
+  require Logger
 
   use Anubis.Server,
     name: "hexgh",
@@ -11,6 +12,7 @@ defmodule HexGh.MCP.Server do
 
   @impl true
   def init(_client_info, frame) do
+    Logger.info("Anubis MCP.Server init: #{inspect(frame)}")
     {:ok, frame}
   end
 end

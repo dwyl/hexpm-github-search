@@ -15,10 +15,7 @@ defmodule HexGhWeb.Plugs.MCPPlug do
 
   def call(conn, _opts) do
     opts =
-      Anubis.Server.Transport.StreamableHTTP.Plug.init(
-        server: HexGh.MCP.Server,
-        force_json_responses: true
-      )
+      Anubis.Server.Transport.StreamableHTTP.Plug.init(server: HexGh.MCP.Server)
 
     Anubis.Server.Transport.StreamableHTTP.Plug.call(conn, opts)
   end

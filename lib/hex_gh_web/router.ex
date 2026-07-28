@@ -40,22 +40,23 @@ defmodule HexGhWeb.Router do
   scope "/mcp" do
     pipe_through :mcp
 
-    forward "/", HexGhWeb.Plugs.MCPPlug
+    # forward "/", HexGhWeb.Plugs.MCPPlug
+    forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: HexGh.MCP.Server
   end
 
   # Enable LiveDashboard in development
-  if Application.compile_env(:hex_gh, :dev_routes) do
-    # If you want to use the LiveDashboard in production, you should put
-    # it behind authentication and allow only admins to access it.
-    # If your application does not have an admins-only section yet,
-    # you can use Plug.BasicAuth to set up some basic authentication
-    # as long as you are also using SSL (which you should anyway).
-    # import Phoenix.LiveDashboard.Router
+  # if Application.compile_env(:hex_gh, :dev_routes) do
+  # If you want to use the LiveDashboard in production, you should put
+  # it behind authentication and allow only admins to access it.
+  # If your application does not have an admins-only section yet,
+  # you can use Plug.BasicAuth to set up some basic authentication
+  # as long as you are also using SSL (which you should anyway).
+  # import Phoenix.LiveDashboard.Router
 
-    # scope "/dev" do
-    #   pipe_through :browser
+  # scope "/dev" do
+  #   pipe_through :browser
 
-    #   live_dashboard "/dashboard", metrics: HexGhWeb.Telemetry
-    # end
-  end
+  #   live_dashboard "/dashboard", metrics: HexGhWeb.Telemetry
+  # end
+  # end
 end
