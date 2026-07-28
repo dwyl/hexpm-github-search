@@ -15,9 +15,7 @@ defmodule HexGhWeb.Plugs.MCPAuth do
 
   @impl true
   def call(conn, _opts) do
-    Logger.debug(
-      "MCP request: #{conn.method} #{conn.request_path} auth=#{has_auth_header?(conn)}"
-    )
+    Logger.info("MCP request: #{conn.method} #{conn.request_path} auth=#{has_auth_header?(conn)}")
 
     case Application.get_env(:hex_gh, :mcp_api_key) do
       nil -> conn

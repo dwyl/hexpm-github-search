@@ -18,4 +18,5 @@ priv/memory.db
 README.md
 AGENTS.md
 .credo.exs
-/test
+test/
+.mcp.json
