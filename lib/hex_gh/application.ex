@@ -21,7 +21,7 @@ defmodule HexGh.Application do
         {Finch, name: HexGh.Finch, pools: %{"https://api.mistral.ai" => [size: 10]}},
         {Task.Supervisor, name: HexGh.TaskSupervisor},
         HexGh.Memory,
-        {HexGh.MCP.Server, transport: {:streamable_http, start: true}},
+        {HexGh.MCP.Server, transport: {:streamable_http, start: true, enable_sse: true}},
         HexGhWeb.Endpoint
       ]
 
