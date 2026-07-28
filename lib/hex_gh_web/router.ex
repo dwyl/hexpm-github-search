@@ -31,11 +31,6 @@ defmodule HexGhWeb.Router do
     plug HexGhWeb.Plugs.MCPRateLimit
   end
 
-  # MCP OAuth discovery — return 404 so Claude Code skips OAuth
-  scope "/.well-known" do
-    get "/*path", HexGhWeb.MCPHealthController, :not_found
-  end
-
   # MCP health check (no auth required)
   scope "/mcp" do
     get "/health", HexGhWeb.MCPHealthController, :health
