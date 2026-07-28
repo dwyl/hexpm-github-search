@@ -31,11 +31,9 @@ defmodule HexGhWeb.Router do
     plug HexGhWeb.Plugs.MCPRateLimit
   end
 
-  # MCP OAuth discovery — return valid metadata for protected-resource
-  # (tells Claude Code no auth is needed), 404 for everything else.
+  # MCP OAuth discovery — return 404 so Claude Code skips OAuth and
+  # connects without authentication.
   scope "/.well-known" do
-    get "/oauth-protected-resource", HexGhWeb.MCPHealthController, :oauth_protected_resource
-    get "/oauth-protected-resource/*path", HexGhWeb.MCPHealthController, :oauth_protected_resource
     get "/*path", HexGhWeb.MCPHealthController, :not_found
   end
 
