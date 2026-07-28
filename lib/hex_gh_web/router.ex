@@ -56,7 +56,7 @@ defmodule HexGhWeb.Router do
     forward "/", ExMCP.HttpPlug,
       handler: HexGh.MCPServer.Public,
       server_info: %{name: "hexgh", version: "0.1.0"},
-      sse_enabled: false,
+      sse_enabled: true,
       validate_origin: false,
       cors_enabled: true,
       allowed_origins: :any
