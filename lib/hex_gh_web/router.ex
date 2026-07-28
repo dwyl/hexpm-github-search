@@ -49,11 +49,11 @@ defmodule HexGhWeb.Router do
   end
 
   # MCP server for external clients (Claude Code, etc.)
-  # Uses streamable HTTP (POST only) — no SSE needed.
+  # Uses MCPSSE plug to handle SSE in-process (Bandit-compatible).
   scope "/mcp" do
     pipe_through :mcp
 
-    forward "/", ExMCP.HttpPlug,
+    forward "/", HexGhWeb.Plugs.MCPSSE,
       handler: HexGh.MCPServer.Public,
       server_info: %{name: "hexgh", version: "0.1.0"},
       sse_enabled: true,
