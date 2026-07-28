@@ -13,9 +13,16 @@ defmodule HexGhWeb.MCPHealthController do
   def oauth_protected_resource(conn, _params) do
     json(conn, %{
       resource: "https://hexgh.nlex.uk/mcp",
-      bearer_methods_supported: [],
+      authorization_servers: ["https://hexgh.nlex.uk"],
+      bearer_methods_supported: ["header"],
       scopes_supported: []
     })
+  end
+
+  def method_not_allowed(conn, _params) do
+    conn
+    |> put_status(405)
+    |> json(%{error: "Method Not Allowed", message: "Use POST for MCP requests"})
   end
 
   def not_found(conn, _params) do
