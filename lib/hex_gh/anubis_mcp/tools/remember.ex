@@ -99,17 +99,7 @@ defmodule HexGh.MCP.Tools.Remember do
 
     case Mistral.chat([%{role: "user", content: prompt}], [], model: "mistral-large-latest") do
       {:ok, %{"content" => content}} ->
-        case Jason.decode(clean_json(content)) do
-          {:ok, %{"action" => "update", "id" => id, "content" => merged} = parsed} ->
-            strategy = parsed["strategy"] || "merge"
-            {:ok, %{action: "update", id: id, content: merged, strategy: strategy}}
-
-          {:ok, %{"action" => "create", "content" => new_content}} ->
-            {:ok, %{action: "create", content: new_content}}
-
-          _ ->
-            {:ok, %{action: "create", content: text}}
-        end
+        parse_decision(content, text)
 
       {:error, _} = error ->
         error
@@ -172,9 +162,34 @@ defmodule HexGh.MCP.Tools.Remember do
               |> Enum.reject(fn {_k, v} -> is_nil(v) end)
               |> Map.new()
 
+            raw_kind = parsed["kind"]
+            allowed_kinds = ~w(learning pain_point decision pattern package_note)
+
+            {kind, metadata} =
+              cond do
+                is_nil(raw_kind) ->
+                  {"learning", metadata}
+
+                raw_kind in allowed_kinds ->
+                  {raw_kind, metadata}
+
+                true ->
+                  normalized =
+                    case raw_kind do
+                      "bug" -> "pain_point"
+                      "caveat" -> "pain_point"
+                      "workaround" -> "pain_point"
+                      "tip" -> "learning"
+                      "info" -> "learning"
+                      _ -> "learning"
+                    end
+
+                  {normalized, Map.put(metadata, :raw_kind, raw_kind)}
+              end
+
             {:ok,
              %{
-               kind: parsed["kind"] || "learning",
+               kind: kind,
                title: parsed["title"] || String.slice(text, 0, 80),
                content: text,
                metadata: metadata
@@ -201,4 +216,37 @@ defmodule HexGh.MCP.Tools.Remember do
     |> String.replace(~r/\n?```$/, "")
     |> String.trim()
   end
+
+  defp parse_decision(content, original_text) do
+    case Jason.decode(clean_json(content)) do
+      {:ok, %{"action" => "update", "id" => id, "content" => merged} = parsed} ->
+        strategy = parsed["strategy"] || "merge"
+        resolve_update(parse_id(id), merged, strategy)
+
+      {:ok, %{"action" => "create", "content" => new_content}} ->
+        {:ok, %{action: "create", content: new_content}}
+
+      _ ->
+        {:ok, %{action: "create", content: original_text}}
+    end
+  end
+
+  defp resolve_update({:ok, parsed_id}, merged, strategy) do
+    {:ok, %{action: "update", id: parsed_id, content: merged, strategy: strategy}}
+  end
+
+  defp resolve_update(:error, merged, _strategy) do
+    {:ok, %{action: "create", content: merged}}
+  end
+
+  defp parse_id(id) when is_integer(id), do: {:ok, id}
+
+  defp parse_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {int, ""} -> {:ok, int}
+      _ -> :error
+    end
+  end
+
+  defp parse_id(_), do: :error
 end

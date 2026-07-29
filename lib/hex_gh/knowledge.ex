@@ -3,11 +3,11 @@ defmodule HexGh.Knowledge do
   import Ecto.Changeset
 
   schema "knowledge" do
-    field :kind, :string
-    field :title, :string
-    field :content, :string
-    field :metadata, :map, default: %{}
-    field :embedding, Pgvector.Ecto.Vector
+    field(:kind, :string)
+    field(:title, :string)
+    field(:content, :string)
+    field(:metadata, :map, default: %{})
+    field(:embedding, Pgvector.Ecto.Vector)
 
     timestamps()
   end

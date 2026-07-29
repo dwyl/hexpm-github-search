@@ -11,6 +11,8 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
   def init(opts), do: opts
 
   def call(conn, _opts) do
+    conn = fetch_query_params(conn)
+
     case authenticate(conn) do
       {:ok, :static} ->
         assign(conn, :oauth_token, %{static: true})
@@ -30,22 +32,31 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
   end
 
   defp authenticate(conn) do
+    # Try header authentication first
     case get_req_header(conn, "authorization") do
       ["Bearer " <> token_value] when token_value != "" ->
-        if static_token_match?(token_value) do
-          {:ok, :static}
-        else
-          case Boruta.Config.access_tokens().get_by(value: token_value) do
-            %{} = token -> {:ok, token}
-            nil -> {:error, "token not found"}
-          end
-        end
-
-      [] ->
-        {:error, "no authorization header"}
+        verify_token(token_value)
 
       _ ->
-        {:error, "invalid authorization header"}
+        # Fallback to query parameter "token" or "access_token"
+        case conn.query_params["token"] || conn.query_params["access_token"] do
+          token_value when is_binary(token_value) and token_value != "" ->
+            verify_token(token_value)
+
+          _ ->
+            {:error, "no authorization header or query token"}
+        end
+    end
+  end
+
+  defp verify_token(token_value) do
+    if static_token_match?(token_value) do
+      {:ok, :static}
+    else
+      case Boruta.Config.access_tokens().get_by(value: token_value) do
+        %{} = token -> {:ok, token}
+        nil -> {:error, "token not found"}
+      end
     end
   end
 

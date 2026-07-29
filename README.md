@@ -265,6 +265,45 @@ Or use the stdio transport (no web server needed, no auth):
 | `search_hex_packages` | Search Elixir packages on Hex.pm by keyword |
 | `search_github_issues` | Search GitHub issues/PRs across an organization (public repos only) |
 
+## MCP
+### Remember architecture
+
+The `remember` tool uses a custom deduplication and consolidation pipeline backed by PostgreSQL and pgvector. Below is the flowchart of the saving process (`Remember` tool execution):
+
+```mermaid
+flowchart TD
+    Start([LLM Client Invokes 'remember' Tool]) --> Spawn[Spawn Background Worker<br/>Task.Supervisor.start_child]
+    Spawn --> ReplyClient[Immediate Response to Client:<br/>accepted: true, status: 'processing']
+    
+    subgraph Asynchronous Pipeline
+        EmbedRaw[Mistral.embed/1: Embed Raw Text] --> SearchDb[KnowledgeBase.search/2: KNN search in Postgres]
+        SearchDb --> FilterClose{Calculate Similarity:<br/>1.0 - distance >= 0.7?}
+        
+        FilterClose -- "No Close Neighbors (Similarity < 0.7)" --> ActionCreate[Action: Create New Record]
+        FilterClose -- "Close Neighbors Found" --> AskMistral[Mistral.chat/3 via mistral-large-latest:<br/>Evaluate version constraints & changes]
+        
+        AskMistral --> DecodeJSON{Decode Decision JSON}
+        DecodeJSON -- Action: Update --> ActionUpdate[Action: Update existing ID]
+        DecodeJSON -- Action: Create --> ActionCreate
+        DecodeJSON -- Decode Fail / Fallback --> FallbackCreate[Action: Create Fallback]
+        
+        ActionCreate --> StructureText[Mistral.chat/3 via mistral-small-latest:<br/>Extract metadata: stack, repo, versions...]
+        FallbackCreate --> StructureText
+        ActionUpdate --> StructureText
+        
+        StructureText --> EmbedFinal[Mistral.embed/1: Embed 'title: content']
+        EmbedFinal --> SaveOrUpdate{Execute Decision}
+        
+        SaveOrUpdate -- Action: Create --> InsertPostgres[KnowledgeBase.save/1:<br/>Insert to postgres]
+        SaveOrUpdate -- Action: Update --> UpdatePostgres[KnowledgeBase.update/2:<br/>Update postgres]
+        
+        UpdatePostgres --> VerifyUpdate{Update Success?}
+        VerifyUpdate -- Yes --> Done([Done])
+        VerifyUpdate -- No (e.g. ID missing) --> InsertPostgres
+        InsertPostgres --> Done
+    end
+```
+
 ## Testing
 
 Integration tests use real API calls (not mocked):

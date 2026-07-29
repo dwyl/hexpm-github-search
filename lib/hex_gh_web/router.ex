@@ -59,8 +59,13 @@ defmodule HexGhWeb.Router do
   scope "/oauth", HexGhWeb.OAuth do
     pipe_through :api
     post "/token", TokenController, :token
-    post "/register", RegistrationController, :register
     post "/revoke", RevokeController, :revoke
+  end
+
+  # Rate-limit client registration to prevent database bloat
+  scope "/oauth", HexGhWeb.OAuth do
+    pipe_through [:api, HexGhWeb.Plugs.MCPRateLimit]
+    post "/register", RegistrationController, :register
   end
 
   # MCP health check (no auth required)
