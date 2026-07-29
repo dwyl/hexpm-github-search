@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: 'hexgh'
+    orgId: 1
+    folder: 'HexGh'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

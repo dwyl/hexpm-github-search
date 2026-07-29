@@ -56,7 +56,13 @@ defmodule HexGhWeb.Telemetry do
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),
       summary("vm.total_run_queue_lengths.cpu"),
-      summary("vm.total_run_queue_lengths.io")
+      summary("vm.total_run_queue_lengths.io"),
+
+      # Mistral AI Token Metrics
+      counter("hex_gh.ai.mistral.request.count", tags: [:model, :path]),
+      sum("hex_gh.ai.mistral.request.prompt_tokens", tags: [:model]),
+      sum("hex_gh.ai.mistral.request.completion_tokens", tags: [:model]),
+      sum("hex_gh.ai.mistral.request.total_tokens", tags: [:model])
     ]
   end
 

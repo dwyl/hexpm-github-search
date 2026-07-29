@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "hexgh"
+    scrape_interval: 10s
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["hexgh:4000"]
+        labels:
+          app: "hexgh"

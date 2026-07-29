@@ -68,14 +68,36 @@ defmodule HexGh.AI.Mistral do
            headers: [{"authorization", "Bearer #{api_key()}"}],
            finch: [name: HexGh.Finch]
          ) do
-      {:ok, %{status: 200, body: body}} ->
-        {:ok, body}
+      {:ok, %{status: 200, body: resp_body}} ->
+        emit_telemetry(path, body, resp_body)
+        {:ok, resp_body}
 
-      {:ok, %{status: status, body: body}} ->
-        {:error, {status, body}}
+      {:ok, %{status: status, body: resp_body}} ->
+        {:error, {status, resp_body}}
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp emit_telemetry(path, req_body, resp_body) do
+    usage = Map.get(resp_body, "usage") || %{}
+
+    model =
+      Map.get(resp_body, "model") || Map.get(req_body, :model) || Map.get(req_body, "model") ||
+        "unknown"
+
+    measurements = %{
+      prompt_tokens: Map.get(usage, "prompt_tokens", 0),
+      completion_tokens: Map.get(usage, "completion_tokens", 0),
+      total_tokens: Map.get(usage, "total_tokens", 0)
+    }
+
+    metadata = %{
+      model: model,
+      path: path
+    }
+
+    :telemetry.execute([:hex_gh, :ai, :mistral, :request], measurements, metadata)
   end
 end
