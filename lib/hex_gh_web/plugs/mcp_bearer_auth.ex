@@ -34,6 +34,7 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
   defp authenticate(conn) do
     # Try header authentication first
     case get_req_header(conn, "authorization") do
+      dbg(token_value)
       ["Bearer " <> token_value] when token_value != "" ->
         verify_token(token_value)
 
