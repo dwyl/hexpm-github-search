@@ -5,7 +5,7 @@ ARG RUNNER_IMAGE="debian:trixie-slim"
 FROM ${BUILDER_IMAGE} AS builder
 
 RUN apt-get update -y && \
-    apt-get install -y build-essential git python3 python3-pip && \
+    apt-get install -y build-essential  libsctp1 git python3 python3-pip && \
     pip3 install sqlite-vec --break-system-packages && \
     apt-get clean && rm -f /var/lib/apt/lists/*_*
 
