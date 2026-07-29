@@ -34,7 +34,6 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
   defp authenticate(conn) do
     # Try header authentication first
     case get_req_header(conn, "authorization") do
-      dbg(token_value)
       ["Bearer " <> token_value] when token_value != "" ->
         verify_token(token_value)
 
@@ -51,6 +50,8 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
   end
 
   defp verify_token(token_value) do
+    dbg(token_value)
+
     if static_token_match?(token_value) do
       {:ok, :static}
     else
@@ -62,6 +63,8 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
   end
 
   defp static_token_match?(token_value) do
+    IO.inspect(token_value)
+
     case Application.get_env(:hex_gh, :mcp_api_key) do
       nil -> false
       "" -> false
