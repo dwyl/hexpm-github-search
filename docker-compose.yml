@@ -11,7 +11,13 @@ services:
     environment:
       # we have to assing it internally, override PORTto 4000 because PORT is already take, = 4001
       - PORT=4000
+    networks:
+      - backend
     restart: unless-stopped
 
 volumes:
   hexgh_data:
+
+networks:
+  backend:
+    external: true
