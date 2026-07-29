@@ -1,6 +1,8 @@
 # HexGh
 
-AI research assistant for Elixir packages and GitHub issues, with long-term vector memory.
+1. AI research assistant for Elixir packages and GitHub issues, with long-term vector memory (SQLite) and web or Telegram interface
+
+2. MCP tool for Elixir packages and Github issues search and `remember` and `recall` functionalities to save knowledge and retrieve similar facts from the Postgres Vecotr database.
 
 ## What it does
 
@@ -8,7 +10,7 @@ Three entry points:
 
 - **LiveView chat UI** at `https://hexgh.nlex.uk` <—> `http://localhost:4000` synchronous pipeline, blocks until response
 - **Telegram webhook** at @HexGithub <-> `POST /webhook/telegram` — async via Task.Supervisor to avoid Telegram retry on slow responses
-- **MCP server** at `https://hexgh.nlex.uk/mcp` — exposes public tools (Hex.pm search, GitHub issue search) to external MCP clients like Claude Code. Heavily based on [this repo](https://github.com/jfim/passeur).
+- **MCP server** at `https://hexgh.nlex.uk/mcp` — exposes public tools (Hex.pm search, GitHub issue search, `remember` and `recall`) to external MCP clients like Claude Code. Heavily based on [this repo](https://github.com/jfim/passeur).
 
 Natural language queries go through a 5-step pipeline:
 

@@ -1,12 +1,23 @@
 defmodule HexGh.KnowledgeBase do
+  @moduledoc """
+  Methods `save/1`, 'update/2`, 'search/2`, `list_by_kind/1`.
+  """
+
   import Ecto.Query
-  alias HexGh.{Knowledge, Repo}
   alias HexGh.AI.Mistral
+  alias HexGh.{Knowledge, Repo}
 
   def save(attrs) when is_map(attrs) do
     attrs
     |> Knowledge.changeset()
     |> Repo.insert()
+  end
+
+  def update(id, attrs) when is_integer(id) and is_map(attrs) do
+    case Repo.get(Knowledge, id) do
+      nil -> {:error, :not_found}
+      entry -> entry |> Knowledge.changeset(attrs) |> Repo.update()
+    end
   end
 
   def search(embedding, opts \\ []) when is_list(embedding) do
@@ -23,6 +34,7 @@ defmodule HexGh.KnowledgeBase do
           title: k.title,
           content: k.content,
           metadata: k.metadata,
+          updated_at: k.updated_at,
           distance: fragment("embedding <=> ?::vector", ^Pgvector.new(embedding))
         }
       )
@@ -202,15 +214,19 @@ defmodule HexGh.KnowledgeBase do
     ]
 
     Enum.each(pain_points, fn entry ->
-      text = "#{entry.title}: #{entry.content}"
+      if Repo.exists?(from(k in Knowledge, where: k.title == ^entry.title)) do
+        IO.puts("Skipped (exists): #{entry.title}")
+      else
+        text = "#{entry.title}: #{entry.content}"
 
-      case Mistral.embed(text) do
-        {:ok, embedding} ->
-          {:ok, _} = save(Map.put(entry, :embedding, embedding))
-          IO.puts("Saved: #{entry.title}")
+        case Mistral.embed(text) do
+          {:ok, embedding} ->
+            {:ok, _} = save(Map.put(entry, :embedding, embedding))
+            IO.puts("Saved: #{entry.title}")
 
-        {:error, reason} ->
-          IO.puts("Failed to embed '#{entry.title}': #{inspect(reason)}")
+          {:error, reason} ->
+            IO.puts("Failed to embed '#{entry.title}': #{inspect(reason)}")
+        end
       end
     end)
   end

@@ -1,6 +1,7 @@
 defmodule HexGhWeb.OAuth.WellKnownController do
   use HexGhWeb, :controller
 
+  @spec protected_resource(Plug.Conn.t(), any()) :: Plug.Conn.t()
   def protected_resource(conn, _params) do
     issuer = Application.get_env(:hex_gh, :oauth_issuer)
 
@@ -12,6 +13,7 @@ defmodule HexGhWeb.OAuth.WellKnownController do
     })
   end
 
+  @spec authorization_server(Plug.Conn.t(), any()) :: Plug.Conn.t()
   def authorization_server(conn, _params) do
     issuer = Application.get_env(:hex_gh, :oauth_issuer)
 

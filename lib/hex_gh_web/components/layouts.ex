@@ -1,8 +1,5 @@
 defmodule HexGhWeb.Layouts do
-  @moduledoc """
-  This module holds layouts and related functionality
-  used by your application.
-  """
+  @moduledoc false
   use HexGhWeb, :html
 
   # Embed all files in layouts/* within this module.

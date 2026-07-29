@@ -150,7 +150,7 @@ defmodule HexGh.Integration.PipelineTest do
       assert {:ok, response} =
                HexGh.Agent.process_query("find Elixir packages for HTTP servers")
 
-      dbg(response)
+      # dbg(response)
       assert response =~ ~r/[Bb]andit/
     end
 

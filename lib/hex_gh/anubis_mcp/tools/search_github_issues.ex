@@ -1,10 +1,11 @@
 defmodule HexGh.MCP.Tools.SearchGithubIssues do
   @moduledoc "Search GitHub issues and pull requests within an organization."
 
-  use Anubis.Server.Component, type: :tool
-  alias Anubis.Server.Response
   alias Anubis.MCP.Error
+  alias Anubis.Server.Response
   alias HexGh.Tools.GitHub
+
+  use Anubis.Server.Component, type: :tool
 
   schema do
     field(:org, {:required, :string}, description: "GitHub organization (e.g. \"elixir-lang\")")

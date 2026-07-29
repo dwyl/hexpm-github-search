@@ -1,6 +1,8 @@
 defmodule HexGhWeb.OAuth.TokenController do
   use HexGhWeb, :controller
 
+  alias Boruta.Oauth.{Error, TokenResponse}
+
   @behaviour Boruta.Oauth.TokenApplication
 
   def token(conn, _params) do
@@ -8,7 +10,7 @@ defmodule HexGhWeb.OAuth.TokenController do
   end
 
   @impl true
-  def token_success(conn, %Boruta.Oauth.TokenResponse{} = response) do
+  def token_success(conn, %TokenResponse{} = response) do
     body =
       %{
         token_type: response.token_type,
@@ -26,7 +28,7 @@ defmodule HexGhWeb.OAuth.TokenController do
   end
 
   @impl true
-  def token_error(conn, %Boruta.Oauth.Error{
+  def token_error(conn, %Error{
         status: status,
         error: error,
         error_description: description
