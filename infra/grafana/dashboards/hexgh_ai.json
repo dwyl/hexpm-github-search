@@ -1,0 +1,69 @@
+{
+  "uid": "hexgh-ai-tokens",
+  "title": "HexGh - AI Token & Model Usage",
+  "tags": ["hexgh", "ai", "mistral"],
+  "timezone": "browser",
+  "editable": true,
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "panels": [
+    {
+      "title": "Total Tokens by Model (Rate / 5m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "uid": "prometheus_hexgh" },
+      "targets": [
+        {
+          "expr": "sum by (model) (rate(hex_gh_ai_mistral_request_total_tokens_sum[5m]))",
+          "legendFormat": "{{ model }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "title": "Token Share by Model",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "uid": "prometheus_hexgh" },
+      "targets": [
+        {
+          "expr": "sum by (model) (hex_gh_ai_mistral_request_total_tokens_sum)",
+          "legendFormat": "{{ model }}"
+        }
+      ]
+    },
+    {
+      "title": "Total API Requests Count",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "uid": "prometheus_hexgh" },
+      "targets": [
+        {
+          "expr": "sum(hex_gh_ai_mistral_request_count_total)",
+          "legendFormat": "Total Requests"
+        }
+      ]
+    },
+    {
+      "title": "Prompt vs Completion Tokens",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "uid": "prometheus_hexgh" },
+      "targets": [
+        {
+          "expr": "sum by (model) (rate(hex_gh_ai_mistral_request_prompt_tokens_sum[5m]))",
+          "legendFormat": "Prompt - {{ model }}"
+        },
+        {
+          "expr": "sum by (model) (rate(hex_gh_ai_mistral_request_completion_tokens_sum[5m]))",
+          "legendFormat": "Completion - {{ model }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    }
+  ]
+}

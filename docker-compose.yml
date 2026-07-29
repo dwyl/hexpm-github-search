@@ -39,6 +39,7 @@ services:
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - hexgh_grafanadata:/var/lib/grafana
     networks:
       - hexgh_monitoring
