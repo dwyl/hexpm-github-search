@@ -16,6 +16,7 @@ defmodule HexGh.Application do
 
     children =
       [
+        HexGh.PromEx,
         HexGh.Repo,
         HexGhWeb.Telemetry,
         {DNSCluster, query: Application.get_env(:hex_gh, :dns_cluster_query) || :ignore},

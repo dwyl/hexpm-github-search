@@ -65,5 +65,8 @@
         "defaults": { "unit": "short" }
       }
     }
-  ]
+  ],
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "schemaVersion": 39
 }
