@@ -12,12 +12,12 @@ services:
       # we have to assing it internally, override PORTto 4000 because PORT is already take, = 4001
       - PORT=4000
     networks:
-      - backend
+      - crm_backend
     restart: unless-stopped
 
 volumes:
   hexgh_data:
 
 networks:
-  backend:
+  crm_backend:
     external: true
