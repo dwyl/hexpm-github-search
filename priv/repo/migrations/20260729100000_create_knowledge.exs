@@ -2,7 +2,7 @@ defmodule HexGh.Repo.Migrations.CreateKnowledge do
   use Ecto.Migration
 
   def up do
-    # execute "CREATE EXTENSION IF NOT EXISTS vector"
+    execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     create table(:knowledge) do
       add(:kind, :text, null: false)

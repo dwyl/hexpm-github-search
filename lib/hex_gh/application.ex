@@ -42,7 +42,10 @@ defmodule HexGh.Application do
     boruta_config = Application.get_env(:boruta, Boruta.Oauth, [])
     boruta_config = Keyword.put_new(boruta_config, :repo, HexGh.Repo)
     boruta_contexts = Keyword.get(boruta_config, :contexts, [])
-    boruta_contexts = Keyword.put_new(boruta_contexts, :resource_owners, HexGh.OAuth.ResourceOwners)
+
+    boruta_contexts =
+      Keyword.put_new(boruta_contexts, :resource_owners, HexGh.OAuth.ResourceOwners)
+
     boruta_config = Keyword.put(boruta_config, :contexts, boruta_contexts)
 
     one_year = 60 * 60 * 24 * 365
@@ -61,14 +64,14 @@ defmodule HexGh.Application do
     :telemetry.attach(
       "mcp-http-request",
       [:ex_mcp, :server, :http, :request],
-      &handle_mcp_event/4,
+      &__MODULE__.handle_mcp_event/4,
       nil
     )
 
     :telemetry.attach(
       "mcp-http-response",
       [:ex_mcp, :server, :http, :response],
-      &handle_mcp_event/4,
+      &__MODULE__.handle_mcp_event/4,
       nil
     )
   end
