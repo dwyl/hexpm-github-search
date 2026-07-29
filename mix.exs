@@ -43,6 +43,7 @@ defmodule HexGh.MixProject do
     [
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.19"},
+      {:pgvector, "~> 0.3"},
       {:boruta, "~> 3.0.0-beta.4"},
       {:argon2_elixir, "~> 4.1"},
       {:exqlite, "~> 0.39.0"},
