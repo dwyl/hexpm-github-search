@@ -11,6 +11,8 @@ config :hex_gh,
   ecto_repos: [HexGh.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+config :hex_gh, HexGh.Repo, types: HexGh.PostgrexTypes
+
 # Boruta OAuth 2.1
 config :boruta, Boruta.Oauth,
   repo: HexGh.Repo,

@@ -6,7 +6,7 @@ defmodule HexGh.Tools.Hex do
   def search_packages(query) do
     case Req.get("#{base_url()}/packages",
            params: [search: query, sort: "total_downloads"],
-           finch: HexGh.Finch
+           finch: [name: HexGh.Finch]
          ) do
       {:ok, %{status: 200, body: items}} when is_list(items) ->
         results =
@@ -35,7 +35,7 @@ defmodule HexGh.Tools.Hex do
   end
 
   def get_package(name) do
-    case Req.get("#{base_url()}/packages/#{name}", finch: HexGh.Finch) do
+    case Req.get("#{base_url()}/packages/#{name}", finch: [name: HexGh.Finch]) do
       {:ok, %{status: 200, body: pkg}} ->
         {:ok, pkg}
 

@@ -7,7 +7,7 @@ defmodule HexGh.Tools.GitHub do
     case Req.get("#{base_url()}/search/issues",
            params: [q: "org:#{org} #{query}"],
            headers: auth_headers(),
-           finch: HexGh.Finch
+           finch: [name: HexGh.Finch]
          ) do
       {:ok, %{status: 200, body: %{"items" => items}}} ->
         results =

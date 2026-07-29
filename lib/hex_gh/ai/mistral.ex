@@ -66,7 +66,7 @@ defmodule HexGh.AI.Mistral do
     case Req.post("#{base_url()}#{path}",
            json: body,
            headers: [{"authorization", "Bearer #{api_key()}"}],
-           finch: HexGh.Finch
+           finch: [name: HexGh.Finch]
          ) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, body}

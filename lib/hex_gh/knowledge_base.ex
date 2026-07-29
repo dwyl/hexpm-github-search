@@ -89,7 +89,8 @@ defmodule HexGh.KnowledgeBase do
         metadata: %{
           symptom: "Migration errors with SQLite database",
           cause: "Boruta migrations use PostgreSQL-only data types and functions",
-          fix: "Use PostgreSQL database; connect to existing Postgres instance via Docker network",
+          fix:
+            "Use PostgreSQL database; connect to existing Postgres instance via Docker network",
           context: ["Boruta", "OAuth", "PostgreSQL", "SQLite"]
         }
       },
@@ -149,9 +150,53 @@ defmodule HexGh.KnowledgeBase do
           "Calling Application.get_env inside runtime.exs returns compile-time values, not the values being set in the same file. Config writes go to an accumulator applied after the file finishes.",
         metadata: %{
           symptom: "Config values appear as nil despite being set earlier in the same file",
-          cause: "runtime.exs config writes to accumulator, Application.get_env reads compiled env",
-          fix: "Store values in local variables and reference those instead of Application.get_env",
+          cause:
+            "runtime.exs config writes to accumulator, Application.get_env reads compiled env",
+          fix:
+            "Store values in local variables and reference those instead of Application.get_env",
           context: ["runtime.exs", "configuration", "releases", "Config provider"]
+        }
+      },
+      %{
+        kind: "pain_point",
+        title: "pgvector CREATE EXTENSION is per-database, not server-wide",
+        content:
+          "PostgreSQL extensions are scoped to individual databases. Running CREATE EXTENSION vector in one database (e.g. crm_reactor_prod) does not make it available in another (e.g. hex_gh). The migration fails with 'type vector does not exist' if the extension isn't enabled in the target database.",
+        metadata: %{
+          symptom:
+            "Migration fails with 'type vector does not exist' despite extension installed in another database",
+          cause: "CREATE EXTENSION is per-database in PostgreSQL, not a server-level setting",
+          fix:
+            "Run CREATE EXTENSION IF NOT EXISTS vector in the specific database (e.g. psql -U superuser -d hex_gh -c 'CREATE EXTENSION IF NOT EXISTS vector;')",
+          context: ["PostgreSQL", "pgvector", "extensions", "migrations"]
+        }
+      },
+      %{
+        kind: "pain_point",
+        title: "pgvector requires custom Postgrex types module",
+        content:
+          "Postgrex cannot handle the vector type by default. Without registering Pgvector.extensions() in a custom types module, queries fail with 'type vector can not be handled by the types module Postgrex.DefaultTypes'.",
+        metadata: %{
+          symptom:
+            "Postgrex.QueryError: type 'vector' can not be handled by Postgrex.DefaultTypes",
+          cause:
+            "Postgrex needs custom type extensions registered to encode/decode pgvector types",
+          fix:
+            "Create a types module with Postgrex.Types.define(MyApp.PostgrexTypes, Pgvector.extensions() ++ Ecto.Adapters.Postgres.extensions(), []) and add types: MyApp.PostgrexTypes to Repo config",
+          context: ["pgvector", "Postgrex", "Ecto", "type extensions"]
+        }
+      },
+      %{
+        kind: "pain_point",
+        title: "pgvector needs pgvector-enabled PostgreSQL Docker image",
+        content:
+          "The standard postgres Docker image does not include the pgvector extension. CREATE EXTENSION vector fails with 'could not open extension control file'. Must use the pgvector/pgvector:pgXX-bookworm image variant matching your PostgreSQL version.",
+        metadata: %{
+          symptom: "CREATE EXTENSION vector fails with 'could not open extension control file'",
+          cause: "Standard postgres Docker image doesn't ship with pgvector extension files",
+          fix:
+            "Switch Docker image from postgres:XX to pgvector/pgvector:pgXX-bookworm (e.g. pgvector/pgvector:pg18-bookworm)",
+          context: ["Docker", "PostgreSQL", "pgvector", "extensions"]
         }
       }
     ]
