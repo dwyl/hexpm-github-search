@@ -36,7 +36,6 @@ defmodule HexGh.KnowledgeBase do
     domain = Keyword.get(opts, :domain)
     stack = Keyword.get(opts, :stack)
     package = Keyword.get(opts, :package)
-    stack_json = if stack, do: Jason.encode!([stack]), else: nil
 
     sql = """
     WITH pre_filtered AS (
@@ -45,7 +44,7 @@ defmodule HexGh.KnowledgeBase do
       WHERE ($1::text IS NULL OR kind = $1)
         AND ($2::text IS NULL OR metadata->>'domain' = $2)
         AND ($3::text IS NULL OR metadata->>'package' = $3)
-        AND ($4::jsonb IS NULL OR metadata->'stack' @> $4::jsonb)
+        AND ($4::text IS NULL OR metadata->'stack' @> jsonb_build_array($4::text))
     ),
     vector_candidates AS (
       SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $5::vector) AS vec_rank
@@ -80,7 +79,7 @@ defmodule HexGh.KnowledgeBase do
       kind,
       domain,
       package,
-      stack_json,
+      stack,
       Pgvector.new(embedding),
       query_text,
       limit
@@ -131,8 +130,9 @@ defmodule HexGh.KnowledgeBase do
 
     query =
       if stack do
-        stack_json = Jason.encode!([stack])
-        from(k in query, where: fragment("?->'stack' @> ?::jsonb", k.metadata, ^stack_json))
+        from(k in query,
+          where: fragment("?->'stack' @> jsonb_build_array(?::text)", k.metadata, ^stack)
+        )
       else
         query
       end
