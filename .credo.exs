@@ -65,171 +65,173 @@
       #     {Credo.Check.Design.DuplicatedCode, false}
       #
       checks: %{
-        enabled: [
-          ## Excellent_migrations
-          # {ExcellentMigrations.CredoCheck.MigrationsSafety, []},
-          #
-          ## Consistency Checks
-          #
-          {Credo.Check.Consistency.ExceptionNames, []},
-          {Credo.Check.Consistency.LineEndings, []},
-          {Credo.Check.Consistency.ParameterPatternMatching, []},
-          {Credo.Check.Consistency.SpaceAroundOperators, []},
-          {Credo.Check.Consistency.SpaceInParentheses, []},
-          {Credo.Check.Consistency.TabsOrSpaces, []},
+        enabled:
+          [
+            ## Excellent_migrations
+            {ExcellentMigrations.CredoCheck.MigrationsSafety, []},
+            #
+            ## Consistency Checks
+            #
+            {Credo.Check.Consistency.ExceptionNames, []},
+            {Credo.Check.Consistency.LineEndings, []},
+            {Credo.Check.Consistency.ParameterPatternMatching, []},
+            {Credo.Check.Consistency.SpaceAroundOperators, []},
+            {Credo.Check.Consistency.SpaceInParentheses, []},
+            {Credo.Check.Consistency.TabsOrSpaces, []},
 
-          #
-          ## Design Checks
-          #
-          # You can customize the priority of any check
-          # Priority values are: `low, normal, high, higher`
-          #
-          {Credo.Check.Design.AliasUsage,
-           [priority: :low, if_nested_deeper_than: 2, if_called_more_often_than: 0]},
-          {Credo.Check.Design.TagFIXME, []},
-          # You can also customize the exit_status of each check.
-          # If you don't want TODO comments to cause `mix credo` to fail, just
-          # set this value to 0 (zero).
-          #
-          {Credo.Check.Design.TagTODO, [exit_status: 2]},
+            #
+            ## Design Checks
+            #
+            # You can customize the priority of any check
+            # Priority values are: `low, normal, high, higher`
+            #
+            {Credo.Check.Design.AliasUsage,
+             [priority: :low, if_nested_deeper_than: 2, if_called_more_often_than: 0]},
+            {Credo.Check.Design.TagFIXME, []},
+            # You can also customize the exit_status of each check.
+            # If you don't want TODO comments to cause `mix credo` to fail, just
+            # set this value to 0 (zero).
+            #
+            {Credo.Check.Design.TagTODO, [exit_status: 2]},
 
-          #
-          ## Readability Checks
-          #
-          {Credo.Check.Readability.AliasOrder, []},
-          {Credo.Check.Readability.FunctionNames, []},
-          {Credo.Check.Readability.LargeNumbers, []},
-          {Credo.Check.Readability.MaxLineLength, [priority: :low, max_length: 120]},
-          {Credo.Check.Readability.ModuleAttributeNames, []},
-          {Credo.Check.Readability.ModuleDoc, []},
-          {Credo.Check.Readability.ModuleNames, []},
-          {Credo.Check.Readability.ParenthesesInCondition, []},
-          {Credo.Check.Readability.ParenthesesOnZeroArityDefs, []},
-          {Credo.Check.Readability.PipeIntoAnonymousFunctions, []},
-          {Credo.Check.Readability.PredicateFunctionNames, []},
-          {Credo.Check.Readability.PreferImplicitTry, []},
-          {Credo.Check.Readability.RedundantBlankLines, []},
-          {Credo.Check.Readability.Semicolons, []},
-          {Credo.Check.Readability.SpaceAfterCommas, []},
-          {Credo.Check.Readability.StringSigils, []},
-          {Credo.Check.Readability.TrailingBlankLine, []},
-          {Credo.Check.Readability.TrailingWhiteSpace, []},
-          {Credo.Check.Readability.UnnecessaryAliasExpansion, []},
-          {Credo.Check.Readability.VariableNames, []},
-          {Credo.Check.Readability.WithSingleClause, []},
+            #
+            ## Readability Checks
+            #
+            {Credo.Check.Readability.AliasOrder, []},
+            {Credo.Check.Readability.FunctionNames, []},
+            {Credo.Check.Readability.LargeNumbers, []},
+            {Credo.Check.Readability.MaxLineLength, [priority: :low, max_length: 120]},
+            {Credo.Check.Readability.ModuleAttributeNames, []},
+            {Credo.Check.Readability.ModuleDoc, []},
+            {Credo.Check.Readability.ModuleNames, []},
+            {Credo.Check.Readability.ParenthesesInCondition, []},
+            {Credo.Check.Readability.ParenthesesOnZeroArityDefs, []},
+            {Credo.Check.Readability.PipeIntoAnonymousFunctions, []},
+            {Credo.Check.Readability.PredicateFunctionNames, []},
+            {Credo.Check.Readability.PreferImplicitTry, []},
+            {Credo.Check.Readability.RedundantBlankLines, []},
+            {Credo.Check.Readability.Semicolons, []},
+            {Credo.Check.Readability.SpaceAfterCommas, []},
+            {Credo.Check.Readability.StringSigils, []},
+            {Credo.Check.Readability.TrailingBlankLine, []},
+            {Credo.Check.Readability.TrailingWhiteSpace, []},
+            {Credo.Check.Readability.UnnecessaryAliasExpansion, []},
+            {Credo.Check.Readability.VariableNames, []},
+            {Credo.Check.Readability.WithSingleClause, []},
 
-          #
-          ## Refactoring Opportunities
-          #
-          {Credo.Check.Refactor.Apply, []},
-          {Credo.Check.Refactor.CondStatements, []},
-          {Credo.Check.Refactor.CyclomaticComplexity, []},
-          {Credo.Check.Refactor.FilterCount, []},
-          {Credo.Check.Refactor.FilterFilter, []},
-          {Credo.Check.Refactor.FunctionArity, []},
-          {Credo.Check.Refactor.LongQuoteBlocks, []},
-          {Credo.Check.Refactor.MapJoin, []},
-          {Credo.Check.Refactor.MatchInCondition, []},
-          {Credo.Check.Refactor.NegatedConditionsInUnless, []},
-          {Credo.Check.Refactor.NegatedConditionsWithElse, []},
-          {Credo.Check.Refactor.Nesting, []},
-          {Credo.Check.Refactor.RedundantWithClauseResult, []},
-          {Credo.Check.Refactor.RejectReject, []},
-          {Credo.Check.Refactor.UnlessWithElse, []},
-          {Credo.Check.Refactor.WithClauses, []},
+            #
+            ## Refactoring Opportunities
+            #
+            {Credo.Check.Refactor.Apply, []},
+            {Credo.Check.Refactor.CondStatements, []},
+            {Credo.Check.Refactor.CyclomaticComplexity, []},
+            {Credo.Check.Refactor.FilterCount, []},
+            {Credo.Check.Refactor.FilterFilter, []},
+            {Credo.Check.Refactor.FunctionArity, []},
+            {Credo.Check.Refactor.LongQuoteBlocks, []},
+            {Credo.Check.Refactor.MapJoin, []},
+            {Credo.Check.Refactor.MatchInCondition, []},
+            {Credo.Check.Refactor.NegatedConditionsInUnless, []},
+            {Credo.Check.Refactor.NegatedConditionsWithElse, []},
+            {Credo.Check.Refactor.Nesting, []},
+            {Credo.Check.Refactor.RedundantWithClauseResult, []},
+            {Credo.Check.Refactor.RejectReject, []},
+            {Credo.Check.Refactor.UnlessWithElse, []},
+            {Credo.Check.Refactor.WithClauses, []},
 
-          #
-          ## Warnings
-          #
-          {Credo.Check.Warning.ApplicationConfigInModuleAttribute, []},
-          {Credo.Check.Warning.BoolOperationOnSameValues, []},
-          {Credo.Check.Warning.Dbg, []},
-          {Credo.Check.Warning.ExpensiveEmptyEnumCheck, []},
-          {Credo.Check.Warning.IExPry, []},
-          {Credo.Check.Warning.IoInspect, []},
-          {Credo.Check.Warning.MissedMetadataKeyInLoggerConfig, []},
-          {Credo.Check.Warning.OperationOnSameValues, []},
-          {Credo.Check.Warning.OperationWithConstantResult, []},
-          {Credo.Check.Warning.RaiseInsideRescue, []},
-          {Credo.Check.Warning.SpecWithStruct, []},
-          {Credo.Check.Warning.StructFieldAmount, []},
-          {Credo.Check.Warning.UnsafeExec, []},
-          {Credo.Check.Warning.UnusedEnumOperation, []},
-          {Credo.Check.Warning.UnusedFileOperation, []},
-          {Credo.Check.Warning.UnusedKeywordOperation, []},
-          {Credo.Check.Warning.UnusedListOperation, []},
-          {Credo.Check.Warning.UnusedMapOperation, []},
-          {Credo.Check.Warning.UnusedPathOperation, []},
-          {Credo.Check.Warning.UnusedRegexOperation, []},
-          {Credo.Check.Warning.UnusedStringOperation, []},
-          {Credo.Check.Warning.UnusedTupleOperation, []},
-          {Credo.Check.Warning.WrongTestFilename, []},
-          {Credo.Check.Warning.UnsafeToAtom, []},
-          # NEW
-          {Jump.CredoChecks.AssertElementSelectorCanNeverFail, []},
-          # Default min_assert_receive_timeout and max_refute_receive_timeout are both nil
-          # (any explicit assert_receive timeout is flagged; refute_receive timeouts are not checked).
-          # - Set min_assert_receive_timeout to allow explicit assert_receive timeouts that are
-          #   integer literals >= the configured value.
-          # - Set max_refute_receive_timeout to flag refute_receive calls with timeouts longer than
-          #   the configured value. Because refute_receive always blocks for its full timeout, a long
-          #   refute_receive sets a lower bound on how long the entire test takes to run.
-          {Jump.CredoChecks.AssertReceiveTimeout,
-           min_assert_receive_timeout: 1_000, max_refute_receive_timeout: 100},
-          {Jump.CredoChecks.AvoidFunctionLevelElse, []},
-          {Jump.CredoChecks.AvoidLoggerConfigureInTest, []},
-          # Default exclusion list is empty
-          {Jump.CredoChecks.AvoidSocketAssignsInTest, excluded: ["test/app_web/plugs/"]},
-          {Jump.CredoChecks.ConditionalAssertion, []},
-          {Jump.CredoChecks.DoctestIExExamples,
-           [
-             # Tells Credo where to look for the `doctest` call.
-             # If you colocate your test files with your implementation, this would just
-             # be `&String.replace_trailing(&1, ".ex", "_test.exs")`
-             derive_test_path: fn filename ->
-               filename
-               |> String.replace_leading("lib/", "test/")
-               |> String.replace_trailing(".ex", "_test.exs")
-             end
-           ]},
-          {Jump.CredoChecks.ForbiddenFunction,
-           functions: [
-             {:erlang, :binary_to_term,
-              "Use Plug.Crypto.non_executable_binary_to_term/2 instead."}
-           ]},
-          {Jump.CredoChecks.LiveViewFormCanBeRehydrated, excluded: ["lib/my_app/"]},
-          {Jump.CredoChecks.UndeclaredExternalResource, []},
-          # Default start_after is "0"
-          {Jump.CredoChecks.PreferChangeOverUpDownMigrations, start_after: "20240101000000"},
-          {Jump.CredoChecks.PreferTextColumns, start_after: "20240101000000"},
-          # Exclude files that intentionally decode fully-trusted (never attacker-controlled) input
-          {Jump.CredoChecks.SafeBinaryToTerm,
-           files: %{excluded: ["lib/my_app/trusted_decoder.ex"]}},
-          {Jump.CredoChecks.TestHasNoAssertions,
-           custom_assertion_functions: [:await_has, :await_with_timeout]},
-          # Default max_assertions is 20
-          {Jump.CredoChecks.TooManyAssertions, [max_assertions: 20]},
-          {Jump.CredoChecks.TopLevelAliasImportRequire, []},
-          {Jump.CredoChecks.UnusedLiveViewAssign, [ignored_assigns: [:active_path]]},
-          # {Jump.CredoChecks.UseObanProWorker, []},
-          {Jump.CredoChecks.VacuousTest,
-           [
-             # When true (default), tests that destructure setup context
-             # (3-arity test blocks) are considered not vacuous.
-             # Set to false to check them too.
-             ignore_setup_only_tests?: false,
-             # Additional library namespaces whose calls should not count
-             # as production code. Defaults to []
-             library_modules: [
-               Ecto,
-               Jason,
-               Oban,
-               Phoenix,
-               Plug
-             ]
-           ]},
-          {Jump.CredoChecks.WeakAssertion, []}
-        ],
+            #
+            ## Warnings
+            #
+            {Credo.Check.Warning.ApplicationConfigInModuleAttribute, []},
+            {Credo.Check.Warning.BoolOperationOnSameValues, []},
+            {Credo.Check.Warning.Dbg, []},
+            {Credo.Check.Warning.ExpensiveEmptyEnumCheck, []},
+            {Credo.Check.Warning.IExPry, []},
+            {Credo.Check.Warning.IoInspect, []},
+            {Credo.Check.Warning.MissedMetadataKeyInLoggerConfig, []},
+            {Credo.Check.Warning.OperationOnSameValues, []},
+            {Credo.Check.Warning.OperationWithConstantResult, []},
+            {Credo.Check.Warning.RaiseInsideRescue, []},
+            {Credo.Check.Warning.SpecWithStruct, []},
+            {Credo.Check.Warning.StructFieldAmount, []},
+            {Credo.Check.Warning.UnsafeExec, []},
+            {Credo.Check.Warning.UnusedEnumOperation, []},
+            {Credo.Check.Warning.UnusedFileOperation, []},
+            {Credo.Check.Warning.UnusedKeywordOperation, []},
+            {Credo.Check.Warning.UnusedListOperation, []},
+            {Credo.Check.Warning.UnusedMapOperation, []},
+            {Credo.Check.Warning.UnusedPathOperation, []},
+            {Credo.Check.Warning.UnusedRegexOperation, []},
+            {Credo.Check.Warning.UnusedStringOperation, []},
+            {Credo.Check.Warning.UnusedTupleOperation, []},
+            {Credo.Check.Warning.WrongTestFilename, []},
+            {Credo.Check.Warning.UnsafeToAtom, []},
+            # NEW
+            {Jump.CredoChecks.AssertElementSelectorCanNeverFail, []},
+            # Default min_assert_receive_timeout and max_refute_receive_timeout are both nil
+            # (any explicit assert_receive timeout is flagged; refute_receive timeouts are not checked).
+            # - Set min_assert_receive_timeout to allow explicit assert_receive timeouts that are
+            #   integer literals >= the configured value.
+            # - Set max_refute_receive_timeout to flag refute_receive calls with timeouts longer than
+            #   the configured value. Because refute_receive always blocks for its full timeout, a long
+            #   refute_receive sets a lower bound on how long the entire test takes to run.
+            {Jump.CredoChecks.AssertReceiveTimeout,
+             min_assert_receive_timeout: 1_000, max_refute_receive_timeout: 100},
+            {Jump.CredoChecks.AvoidFunctionLevelElse, []},
+            {Jump.CredoChecks.AvoidLoggerConfigureInTest, []},
+            # Default exclusion list is empty
+            {Jump.CredoChecks.AvoidSocketAssignsInTest, excluded: ["test/app_web/plugs/"]},
+            {Jump.CredoChecks.ConditionalAssertion, []},
+            {Jump.CredoChecks.DoctestIExExamples,
+             [
+               # Tells Credo where to look for the `doctest` call.
+               # If you colocate your test files with your implementation, this would just
+               # be `&String.replace_trailing(&1, ".ex", "_test.exs")`
+               derive_test_path: fn filename ->
+                 filename
+                 |> String.replace_leading("lib/", "test/")
+                 |> String.replace_trailing(".ex", "_test.exs")
+               end
+             ]},
+            {Jump.CredoChecks.ForbiddenFunction,
+             functions: [
+               {:erlang, :binary_to_term,
+                "Use Plug.Crypto.non_executable_binary_to_term/2 instead."}
+             ]},
+            {Jump.CredoChecks.LiveViewFormCanBeRehydrated, excluded: ["lib/my_app/"]},
+            {Jump.CredoChecks.UndeclaredExternalResource, []},
+            # Default start_after is "0"
+            {Jump.CredoChecks.PreferChangeOverUpDownMigrations, start_after: "20240101000000"},
+            {Jump.CredoChecks.PreferTextColumns, start_after: "20240101000000"},
+            # Exclude files that intentionally decode fully-trusted (never attacker-controlled) input
+            {Jump.CredoChecks.SafeBinaryToTerm,
+             files: %{excluded: ["lib/my_app/trusted_decoder.ex"]}},
+            {Jump.CredoChecks.TestHasNoAssertions,
+             custom_assertion_functions: [:await_has, :await_with_timeout]},
+            # Default max_assertions is 20
+            {Jump.CredoChecks.TooManyAssertions, [max_assertions: 20]},
+            {Jump.CredoChecks.TopLevelAliasImportRequire, []},
+            {Jump.CredoChecks.UnusedLiveViewAssign, [ignored_assigns: [:active_path]]},
+            # {Jump.CredoChecks.UseObanProWorker, []},
+            {Jump.CredoChecks.VacuousTest,
+             [
+               # When true (default), tests that destructure setup context
+               # (3-arity test blocks) are considered not vacuous.
+               # Set to false to check them too.
+               ignore_setup_only_tests?: false,
+               # Additional library namespaces whose calls should not count
+               # as production code. Defaults to []
+               library_modules: [
+                 Ecto,
+                 Jason,
+                 Oban,
+                 Phoenix,
+                 Plug
+               ]
+             ]},
+            {Jump.CredoChecks.WeakAssertion, []},
+            {Credo.Check.Design.DuplicatedCode, []}
+          ] ++ Enum.map(ExSlop.recommended_checks(), &{&1, []}),
         disabled: [
           #
           # Checks scheduled for next check update (opt-in for now)
@@ -241,7 +243,6 @@
           #
           {Credo.Check.Consistency.MultiAliasImportRequireUse, []},
           {Credo.Check.Consistency.UnusedVariableNames, []},
-          {Credo.Check.Design.DuplicatedCode, []},
           {Credo.Check.Design.SkipTestWithoutComment, []},
           {Credo.Check.Readability.AliasAs, []},
           {Credo.Check.Readability.BlockPipe, []},

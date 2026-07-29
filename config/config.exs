@@ -8,7 +8,19 @@
 import Config
 
 config :hex_gh,
+  ecto_repos: [HexGh.Repo],
   generators: [timestamp_type: :utc_datetime]
+
+# Boruta OAuth 2.1
+config :boruta, Boruta.Oauth,
+  repo: HexGh.Repo,
+  contexts: [
+    resource_owners: HexGh.OAuth.ResourceOwners
+  ],
+  max_ttl: [
+    access_token: 60 * 60 * 24 * 365,
+    refresh_token: 60 * 60 * 24 * 365
+  ]
 
 # Configure the endpoint
 config :hex_gh, HexGhWeb.Endpoint,

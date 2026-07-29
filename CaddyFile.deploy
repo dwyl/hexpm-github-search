@@ -1,0 +1,42 @@
+reactor.nlex.uk {
+    handle /grafana* {
+        reverse_proxy localhost:3000
+    }
+
+
+    handle /live* {
+        reverse_proxy localhost:4000 {
+            lb_policy cookie
+            health_uri /api/health
+            health_interval 10s
+            transport http {
+                keepalive 30s
+            }
+        }
+    }
+
+    handle {
+        reverse_proxy localhost:4000 {
+            lb_policy cookie
+            health_uri /api/health
+            health_interval 10s
+            transport http {
+                keepalive 30s
+            }
+        }
+    }
+}
+
+minio.nlex.uk {
+    reverse_proxy localhost:9001
+}
+
+s3.nlex.uk {
+    reverse_proxy localhost:9000
+}
+
+hexgh.nlex.uk {
+    reverse_proxy localhost:4001 {
+            flush_interval -1
+        }
+}

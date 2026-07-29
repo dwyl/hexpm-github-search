@@ -8,7 +8,7 @@ Three entry points:
 
 - **LiveView chat UI** at `https://hexgh.nlex.uk` <—> `http://localhost:4000` synchronous pipeline, blocks until response
 - **Telegram webhook** at @HexGithub <-> `POST /webhook/telegram` — async via Task.Supervisor to avoid Telegram retry on slow responses
-- **MCP server** at `https://hexgh.nlex.uk/mcp` — exposes public tools (Hex.pm search, GitHub issue search) to external MCP clients like Claude Code
+- **MCP server** at `https://hexgh.nlex.uk/mcp` — exposes public tools (Hex.pm search, GitHub issue search) to external MCP clients like Claude Code. Heavily based on [this repo](https://github.com/jfim/passeur).
 
 Natural language queries go through a 5-step pipeline:
 

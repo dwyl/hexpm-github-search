@@ -14,6 +14,19 @@ defmodule HexGhWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :oauth_browser do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+    plug HexGhWeb.Plugs.SessionAuth
+  end
+
+  pipeline :mcp do
+    plug HexGhWeb.Plugs.MCPCORS
+    plug HexGhWeb.Plugs.MCPRateLimit
+  end
+
   scope "/", HexGhWeb do
     pipe_through :browser
 
@@ -26,9 +39,27 @@ defmodule HexGhWeb.Router do
     post "/telegram", WebhookController, :telegram
   end
 
-  pipeline :mcp do
-    plug HexGhWeb.Plugs.MCPApiKey
-    plug HexGhWeb.Plugs.MCPRateLimit
+  # Well-known metadata (no auth)
+  scope "/.well-known", HexGhWeb.OAuth do
+    pipe_through :api
+    get "/oauth-protected-resource", WellKnownController, :protected_resource
+    get "/oauth-authorization-server", WellKnownController, :authorization_server
+  end
+
+  # OAuth browser flow (session support for login + authorize)
+  scope "/oauth", HexGhWeb.OAuth do
+    pipe_through :oauth_browser
+    get "/login", LoginController, :show
+    post "/login", LoginController, :create
+    get "/authorize", AuthorizeController, :authorize
+  end
+
+  # OAuth API endpoints (no session needed)
+  scope "/oauth", HexGhWeb.OAuth do
+    pipe_through :api
+    post "/token", TokenController, :token
+    post "/register", RegistrationController, :register
+    post "/revoke", RevokeController, :revoke
   end
 
   # MCP health check (no auth required)
@@ -36,26 +67,10 @@ defmodule HexGhWeb.Router do
     get "/health", HexGhWeb.MCPHealthController, :health
   end
 
-  # MCP server for external clients (Claude Code, etc.)
+  # MCP server (protected by BearerAuth via MCPPlug)
   scope "/mcp" do
     pipe_through :mcp
 
-    forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: HexGh.MCP.Server
+    forward "/", HexGhWeb.Plugs.MCPPlug
   end
-
-  # Enable LiveDashboard in development
-  # if Application.compile_env(:hex_gh, :dev_routes) do
-  # If you want to use the LiveDashboard in production, you should put
-  # it behind authentication and allow only admins to access it.
-  # If your application does not have an admins-only section yet,
-  # you can use Plug.BasicAuth to set up some basic authentication
-  # as long as you are also using SSL (which you should anyway).
-  # import Phoenix.LiveDashboard.Router
-
-  # scope "/dev" do
-  #   pipe_through :browser
-
-  #   live_dashboard "/dashboard", metrics: HexGhWeb.Telemetry
-  # end
-  # end
 end

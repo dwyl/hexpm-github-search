@@ -26,7 +26,9 @@ COPY priv priv
 COPY lib lib
 COPY assets assets
 
+RUN mix esbuild.install --if-missing
 RUN mix assets.deploy
+
 RUN mix compile
 
 COPY config/runtime.exs config/

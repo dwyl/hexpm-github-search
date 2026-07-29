@@ -41,6 +41,10 @@ defmodule HexGh.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:ecto_sql, "~> 3.13"},
+      {:postgrex, "~> 0.19"},
+      {:boruta, "~> 3.0.0-beta.4"},
+      {:argon2_elixir, "~> 4.1"},
       {:exqlite, "~> 0.39.0"},
       {:anubis_mcp,
        git: "https://github.com/jfim/anubis-mcp.git",
@@ -65,9 +69,10 @@ defmodule HexGh.MixProject do
       {:dialyxir, "~> 1.4", runtime: false},
       {:credo, "~> 1.7", runtime: false},
       {:ex_slop, "~> 0.1", only: [:dev, :test], runtime: false},
+      {:jump_credo_checks, "~> 0.4"},
+      {:excellent_migrations, "~> 0.1", only: [:dev, :test], runtime: false},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
-      {:jump_credo_checks, "~> 0.4"},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",

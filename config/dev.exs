@@ -1,5 +1,23 @@
 import Config
 
+# Dev database
+config :hex_gh, HexGh.Repo,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "hex_gh_dev",
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+
+# OAuth dev defaults
+config :hex_gh,
+  oauth_issuer: "http://localhost:4000",
+  mcp_admin_user: "admin",
+  mcp_admin_password_hash: "$argon2id$v=19$m=65536,t=3,p=4$placeholder"
+
+config :boruta, Boruta.Oauth, issuer: "http://localhost:4000"
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

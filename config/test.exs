@@ -10,6 +10,23 @@ config :hex_gh, HexGhWeb.Endpoint,
 # Use a separate memory DB for tests (wiped before each run)
 config :hex_gh, memory_db_path: "priv/test_memory.db"
 
+# Test database
+config :hex_gh, HexGh.Repo,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "hex_gh_test#{System.get_env("MIX_TEST_PARTITION")}",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: System.schedulers_online() * 2
+
+# OAuth test defaults
+config :hex_gh,
+  oauth_issuer: "http://localhost:4002",
+  mcp_admin_user: "admin",
+  mcp_admin_password_hash: "$argon2id$v=19$m=65536,t=3,p=4$placeholder"
+
+config :boruta, Boruta.Oauth, issuer: "http://localhost:4002"
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

@@ -12,9 +12,11 @@ defmodule HexGh.Application do
   @impl true
   def start(_type, _args) do
     attach_mcp_telemetry()
+    configure_boruta()
 
     children =
       [
+        HexGh.Repo,
         HexGhWeb.Telemetry,
         {DNSCluster, query: Application.get_env(:hex_gh, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: HexGh.PubSub},
@@ -34,6 +36,25 @@ defmodule HexGh.Application do
     end
 
     result
+  end
+
+  defp configure_boruta do
+    boruta_config = Application.get_env(:boruta, Boruta.Oauth, [])
+    boruta_config = Keyword.put_new(boruta_config, :repo, HexGh.Repo)
+    boruta_contexts = Keyword.get(boruta_config, :contexts, [])
+    boruta_contexts = Keyword.put_new(boruta_contexts, :resource_owners, HexGh.OAuth.ResourceOwners)
+    boruta_config = Keyword.put(boruta_config, :contexts, boruta_contexts)
+
+    one_year = 60 * 60 * 24 * 365
+    existing_max_ttl = Keyword.get(boruta_config, :max_ttl, [])
+
+    max_ttl =
+      existing_max_ttl
+      |> Keyword.put_new(:access_token, one_year)
+      |> Keyword.put_new(:refresh_token, one_year)
+
+    boruta_config = Keyword.put(boruta_config, :max_ttl, max_ttl)
+    Application.put_env(:boruta, Boruta.Oauth, boruta_config)
   end
 
   defp attach_mcp_telemetry do

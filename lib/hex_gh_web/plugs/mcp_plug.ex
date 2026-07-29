@@ -1,5 +1,7 @@
 defmodule HexGhWeb.Plugs.MCPPlug do
-  @moduledoc false
+  @moduledoc """
+  Wraps the Anubis MCP StreamableHTTP Plug with Bearer token authentication.
+  """
 
   @behaviour Plug
 
@@ -7,16 +9,19 @@ defmodule HexGhWeb.Plugs.MCPPlug do
   def init(opts), do: opts
 
   @impl true
-  def call(%Plug.Conn{path_info: [".well-known" | _]} = conn, _opts) do
-    conn
-    |> Plug.Conn.send_resp(404, "Not Found")
-    |> Plug.Conn.halt()
-  end
-
   def call(conn, _opts) do
-    opts =
-      Anubis.Server.Transport.StreamableHTTP.Plug.init(server: HexGh.MCP.Server)
+    conn = HexGhWeb.Plugs.MCPBearerAuth.call(conn, [])
 
-    Anubis.Server.Transport.StreamableHTTP.Plug.call(conn, opts)
+    if conn.halted do
+      conn
+    else
+      opts =
+        Anubis.Server.Transport.StreamableHTTP.Plug.init(
+          server: HexGh.MCP.Server,
+          force_json_responses: true
+        )
+
+      Anubis.Server.Transport.StreamableHTTP.Plug.call(conn, opts)
+    end
   end
 end

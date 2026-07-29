@@ -60,7 +60,24 @@ if telegram_bot_token do
     telegram_webhook_url: System.get_env("TELEGRAM_WEBHOOK_URL")
 end
 
+# OAuth admin credentials (optional in dev, required in prod)
+if mcp_admin_user = System.get_env("MCP_ADMIN_USER") do
+  config :hex_gh,
+    mcp_admin_user: mcp_admin_user,
+    mcp_admin_password_hash:
+      System.get_env("MCP_ADMIN_PASSWORD_HASH") ||
+        raise("MCP_ADMIN_PASSWORD_HASH must be set when MCP_ADMIN_USER is configured")
+end
+
 if config_env() == :prod do
+  # PostgreSQL for Boruta OAuth
+  database_url =
+    System.get_env("DATABASE_URL") ||
+      raise "DATABASE_URL is not set"
+
+  config :hex_gh, HexGh.Repo,
+    url: database_url,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
   # want to use a different value for prod and you most likely don't want
@@ -87,6 +104,11 @@ if config_env() == :prod do
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
     ],
     secret_key_base: secret_key_base
+
+  # Boruta OAuth issuer
+  oauth_issuer = "https://#{host}"
+  config :hex_gh, oauth_issuer: oauth_issuer
+  config :boruta, Boruta.Oauth, issuer: oauth_issuer
 
   # ## SSL Support
   #
