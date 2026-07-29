@@ -13,9 +13,10 @@ defmodule HexGh.MCP.Tools.Remember do
   schema do
     field(:text, {:required, :string},
       description:
-        "Raw learning text to structure and save (e.g. a pain point, pattern, or decision). " <>
-          "Include version details when relevant: package name, version (e.g. 'pgvector ~> 0.3'), " <>
-          "repo (e.g. 'phoenixframework/phoenix'), and whether a fix was introduced in a specific version. " <>
+        "Technical learning, pain point, pattern, or architectural decision to save to project memory. " <>
+          "Synthesize the text to include: 1) What occurred / symptom, 2) Root cause, 3) Solution / fix, " <>
+          "4) Technologies/stack involved, and 5) Package name, version constraints (e.g. 'pgvector ~> 0.3'), " <>
+          "and GitHub repo if applicable. " <>
           "Example: 'In anubis_mcp (jfim/anubis-mcp, branch non-upstreamed-fixes), the SSE keepalive " <>
           "defaults to 5s which causes timeouts behind Caddy. Fixed by adding flush_interval -1 to Caddyfile.'"
     )
@@ -37,13 +38,47 @@ defmodule HexGh.MCP.Tools.Remember do
          neighbors <- KnowledgeBase.search(embedding, limit: 3),
          {:ok, decision} <- decide(text, neighbors),
          {:ok, structured} <- structure_text(decision.content),
-         {:ok, final_embedding} <- Mistral.embed("#{structured.title}: #{structured.content}") do
+         embedding_text <- build_embedding_text(structured, decision.content),
+         {:ok, final_embedding} <- Mistral.embed(embedding_text) do
       result = execute_decision(decision, structured, final_embedding)
       Logger.info("Knowledge base: #{result.action} — #{result.title}")
     else
       {:error, reason} ->
         Logger.error("Knowledge base remember failed: #{inspect(reason)}")
     end
+  end
+
+  defp build_embedding_text(structured, content) do
+    stack_list =
+      Map.get(structured.metadata, :stack) || Map.get(structured.metadata, "stack") || []
+
+    stack_str =
+      if is_list(stack_list) and stack_list != [], do: Enum.join(stack_list, ", "), else: "N/A"
+
+    symptom =
+      Map.get(structured.metadata, :symptom) || Map.get(structured.metadata, "symptom") || "N/A"
+
+    fix = Map.get(structured.metadata, :fix) || Map.get(structured.metadata, "fix") || "N/A"
+
+    domain =
+      Map.get(structured.metadata, :domain) || Map.get(structured.metadata, "domain") || "general"
+
+    package =
+      Map.get(structured.metadata, :package) || Map.get(structured.metadata, "package") || "N/A"
+
+    version =
+      Map.get(structured.metadata, :package_version) ||
+        Map.get(structured.metadata, "package_version") || "N/A"
+
+    """
+    [#{structured.kind} | #{domain}] #{structured.title}
+    Stack: #{stack_str}
+    Package: #{package} (#{version})
+    Symptom: #{symptom}
+    Fix: #{fix}
+    Summary: #{content}
+    """
+    |> String.trim()
   end
 
   defp decide(text, []) do
@@ -131,14 +166,19 @@ defmodule HexGh.MCP.Tools.Remember do
     - "title": short summary (max 80 chars)
     - "kind": one of "learning", "pain_point", "decision", "pattern", "package_note"
     - "domain": one of "deploy" (infrastructure, Docker, reverse proxy, CI/CD, migrations), "config" (runtime.exs, env vars, app config), "code" (patterns, APIs, library usage), "debug" (error resolution, troubleshooting)
-    - "stack": list of technologies involved, lowercase (e.g. ["elixir", "postgres", "postgrex", "docker"]). Include all relevant layers — e.g. Postgrex is both "elixir" and "postgres".
-    - "symptom": what was observed (optional, null if N/A)
+    - "stack": list of technologies involved, lowercase (e.g. ["elixir", "postgres", "postgrex", "docker", "caddy"]).
+      IMPORTANT: Infer implicit stack layers even if not explicitly named in text:
+      - Mentions of Caddyfile / reverse_proxy / 502 / 504 -> include "caddy", "deploy"
+      - Mentions of mix.exs / Plug / GenServer / LiveView / Ecto -> include "elixir", "phoenix"
+      - Mentions of docker / docker-compose / container -> include "docker"
+      - Mentions of pgvector / postgrex / psql -> include "postgres"
+    - "symptom": what was observed or error message (optional, null if N/A)
     - "cause": root cause (optional, null if N/A)
     - "fix": how it was resolved (optional, null if N/A)
-    - "package": hex.pm package name if applicable (e.g. "phoenix", "pgvector"), null otherwise
+    - "package": hex.pm package name if applicable (e.g. "phoenix", "pgvector", "anubis_mcp"), null otherwise
     - "package_version": version or version constraint this applies to (e.g. "~> 0.3", "3.0.0-beta.4"), null if N/A
     - "resolved_in": version where the issue was fixed, if known (e.g. "1.8.0"), null otherwise
-    - "repo": GitHub repo (e.g. "phoenixframework/phoenix") if applicable, null otherwise
+    - "repo": GitHub repo (e.g. "phoenixframework/phoenix", "dwyl/hexpm-github-search") if applicable, null otherwise
 
     Text: #{text}
     """

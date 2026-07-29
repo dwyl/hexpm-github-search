@@ -21,12 +21,130 @@ defmodule HexGh.KnowledgeBase do
   end
 
   def search(embedding, opts \\ []) when is_list(embedding) do
+    query_text = Keyword.get(opts, :query) || Keyword.get(opts, :query_text)
+
+    if query_text && is_binary(query_text) && query_text != "" do
+      search_hybrid(query_text, embedding, opts)
+    else
+      search_vector(embedding, opts)
+    end
+  end
+
+  def search_hybrid(query_text, embedding, opts \\ []) do
     limit = Keyword.get(opts, :limit, 5)
     kind = Keyword.get(opts, :kind)
+    domain = Keyword.get(opts, :domain)
+    stack = Keyword.get(opts, :stack)
+    package = Keyword.get(opts, :package)
+    stack_json = if stack, do: Jason.encode!([stack]), else: nil
+
+    sql = """
+    WITH pre_filtered AS (
+      SELECT id, title, kind, content, metadata, updated_at, embedding, search_vector
+      FROM knowledge
+      WHERE ($1::text IS NULL OR kind = $1)
+        AND ($2::text IS NULL OR metadata->>'domain' = $2)
+        AND ($3::text IS NULL OR metadata->>'package' = $3)
+        AND ($4::jsonb IS NULL OR metadata->'stack' @> $4::jsonb)
+    ),
+    vector_candidates AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $5::vector) AS vec_rank
+      FROM pre_filtered
+      ORDER BY embedding <=> $5::vector
+      LIMIT 20
+    ),
+    text_candidates AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(search_vector, websearch_to_tsquery('english', $6)) DESC) AS text_rank
+      FROM pre_filtered
+      WHERE search_vector @@ websearch_to_tsquery('english', $6)
+      LIMIT 20
+    ),
+    candidate_pool AS (
+      SELECT id FROM vector_candidates
+      UNION
+      SELECT id FROM text_candidates
+    )
+    SELECT k.id, k.title, k.kind, k.content, k.metadata, k.updated_at,
+           (k.embedding <=> $5::vector) AS distance,
+           ((COALESCE(1.0 / (60.0 + v.vec_rank), 0.0) + COALESCE(1.0 / (60.0 + t.text_rank), 0.0)) *
+            POWER(0.995, GREATEST(0.0, EXTRACT(DAY FROM (NOW() - k.updated_at))))) AS rrf_score
+    FROM candidate_pool c
+    JOIN knowledge k ON k.id = c.id
+    LEFT JOIN vector_candidates v ON v.id = c.id
+    LEFT JOIN text_candidates t ON t.id = c.id
+    ORDER BY rrf_score DESC
+    LIMIT $7;
+    """
+
+    params = [
+      kind,
+      domain,
+      package,
+      stack_json,
+      Pgvector.new(embedding),
+      query_text,
+      limit
+    ]
+
+    case Repo.query(sql, params) do
+      {:ok, %{rows: rows, columns: columns}} ->
+        Enum.map(rows, fn row ->
+          map = Enum.zip(columns, row) |> Map.new()
+
+          %{
+            id: map["id"],
+            title: map["title"],
+            kind: map["kind"],
+            content: map["content"],
+            metadata: map["metadata"] || %{},
+            updated_at: map["updated_at"],
+            distance: map["distance"] || 0.0
+          }
+        end)
+
+      {:error, _reason} ->
+        # Fallback to vector search if ts_vector column is not yet present
+        search_vector(embedding, opts)
+    end
+  end
+
+  def search_vector(embedding, opts \\ []) when is_list(embedding) do
+    limit = Keyword.get(opts, :limit, 5)
+    kind = Keyword.get(opts, :kind)
+    domain = Keyword.get(opts, :domain)
+    stack = Keyword.get(opts, :stack)
+    package = Keyword.get(opts, :package)
+
+    query = from(k in Knowledge)
+
+    query = if kind, do: from(k in query, where: k.kind == ^kind), else: query
 
     query =
-      from(k in Knowledge,
-        order_by: fragment("embedding <=> ?::vector", ^Pgvector.new(embedding)),
+      if domain,
+        do: from(k in query, where: fragment("?->>'domain' = ?", k.metadata, ^domain)),
+        else: query
+
+    query =
+      if package,
+        do: from(k in query, where: fragment("?->>'package' = ?", k.metadata, ^package)),
+        else: query
+
+    query =
+      if stack do
+        stack_json = Jason.encode!([stack])
+        from(k in query, where: fragment("?->'stack' @> ?::jsonb", k.metadata, ^stack_json))
+      else
+        query
+      end
+
+    query =
+      from(k in query,
+        order_by:
+          fragment(
+            "(1.0 - (embedding <=> ?::vector)) * POWER(0.995, GREATEST(0.0, EXTRACT(DAY FROM (NOW() - ?)))) DESC",
+            ^Pgvector.new(embedding),
+            k.updated_at
+          ),
         limit: ^limit,
         select: %{
           id: k.id,
@@ -38,13 +156,6 @@ defmodule HexGh.KnowledgeBase do
           distance: fragment("embedding <=> ?::vector", ^Pgvector.new(embedding))
         }
       )
-
-    query =
-      if kind do
-        from(k in query, where: k.kind == ^kind)
-      else
-        query
-      end
 
     Repo.all(query)
   end

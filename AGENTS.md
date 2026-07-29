@@ -5,6 +5,18 @@ This is a web application written using the Phoenix web framework.
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 
+### Knowledge Base Directives (`recall` & `remember`)
+
+- **`recall` Triggers (Execute BEFORE fixing)**:
+  1. **On Any Command/Test Failure**: Immediately run `recall(query: "<error message>", kind: "pain_point")` when a build, test, or terminal command fails.
+  2. **On Second Iteration**: If your first code edit fails to fix an error, run `recall` on the specific function/module before making a second edit.
+  3. **Before Modifying Infrastructure/Config**: Run `recall` before editing `Caddyfile`, `docker-compose.yml`, `runtime.exs`, or OAuth configs.
+
+- **`remember` Triggers (Execute AFTER fixing)**:
+  1. **The 2+ Attempt Rule**: Call `remember` ONLY IF the fix required 2 or more failed attempts to solve. Ignore 1-attempt fixes (typos, simple syntax errors, missing imports).
+  2. **Cross-Boundary Layer Fixes**: Call `remember` if the fix involved interactions between 2+ layers (e.g., Caddy reverse-proxy + Phoenix SSE, Docker networking + Postgres).
+  3. **Library Version Quirks**: Call `remember` if the fix involved an undocumented behavior or version constraint in a dependency.
+
 ### Phoenix v1.8 guidelines
 
 - **Always** begin your LiveView templates with `<Layouts.app flash={@flash} ...>` which wraps all inner content

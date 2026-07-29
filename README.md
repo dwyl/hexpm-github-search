@@ -24,7 +24,7 @@ User input (text or voice)
   → Response
 ```
 
-## Architecture
+## Search asistance architecture
 
 ```mermaid
 ---
@@ -76,6 +76,174 @@ There is threshold (cosine < 0.65 and top 3 hints). However, there is a limitati
 
 > [!WARNING]
 > Firstly, one should preferably only save facts and not some preferences because injecting a preference can mislead the LLM if old preferences bleed into unrelated queries. But facts can also become outdated. For example, a default implementation can be changed which makes a statement like "the default package for na HTTP server is Bandit" become false. Another example: saving "I'm interested in LiveView issues in phoenixframework" would then surface on a query like "find issues about database performance in ecto" — and the LLM might still search phoenixframework instead of elixir-ecto.
+
+## MCP
+
+The MCP provides four tools:
+
+```txt
+compile-time tools: ["recall", "remember", "search_github_issues", "search_hex_packages"]
+```
+
+### Example
+
+```sh
+> Search hex.p Elixir packages related to Oauth
+
+> hexgh/search_hex_packages(Call hexgh search_hex_packages MCP tool) (ctrl+o to expand)
+```
+
+**Result**:
+
+```txt
+  I called your MCP tool (search_hex_packages on hexgh) for query "oauth". Here are top Elixir OAuth packages sorted by popularity:
+
+   Package                        │ Description                                                                          │ Latest Version                │ Total Downloads
+  ────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────┼───────────────────────────────
+   oauth2[1]                      │ An Elixir OAuth 2.0 Client Library                                                   │ 2.1.1                         │ 14,228,321
+   oauther[2]                     │ A library to authenticate using the OAuth 1.0 protocol                               │ 1.3.0                         │ 26,362,062
+   boruta[3]                      │ Core of an OAuth/OpenID Connect provider enabling authorization in your applications │ 3.0.0-beta.4                  │ 474,691
+   ex_oauth2_provider[4]          │ No brainer OAuth 2.0 provider                                                        │ 0.5.7                         │ 466,380
+   elixir_auth_google[5]          │ Minimalist Google OAuth Authentication for Elixir Apps                               │ 1.6.11                        │ 392,112
+   phoenix_oauth2_provider[6]     │ Setup an OAuth 2.0 server in your Phoenix app                                        │ 0.5.1                         │ 266,518
+   kafka_ex[7]                    │ Elixir client for Apache Kafka with OAuth / SASL support                             │ 1.1.1                         │ 32,372,036
+   brod_oauth[8]                  │ Brod plugin for OAuth bearer support                                                 │ 0.1.1                         │ 175,934
+
+  [1]: oauth2 <https://hex.pm/packages/oauth2>
+  [2]: oauther <https://hex.pm/packages/oauther>
+  [3]: boruta <https://hex.pm/packages/boruta>
+  [4]: ex_oauth2_provider <https://hex.pm/packages/ex_oauth2_provider>
+  [5]: elixir_auth_google <https://hex.pm/packages/elixir_auth_google>
+  [6]: phoenix_oauth2_provider <https://hex.pm/packages/phoenix_oauth2_provider>
+  [7]: kafka_ex <https://hex.pm/packages/kafka_ex>
+  [8]: brod_oauth <https://hex.pm/packages/brod_oauth>
+```
+
+**Key Capabilities & Benefits**:
+
+  1. Real-time Hex.pm Package Discovery (search_hex_packages)
+      • No Hallucinations: Prevents the AI from guessing non-existent package names or deprecated version numbers.
+      • Dependency Inspection: Instantly checks active maintenance status, recent downloads, and latest releases when suggesting dependencies for your Phoenix app.
+  2. GitHub Issue & Bug Resolution (search_github_issues)
+      • Automated Debugging: When an error or edge case arises with an Elixir library, the agent can search GitHub issues directly to check for known bugs, workarounds, or breaking
+      changes without requiring you to switch to a browser.
+  3. Persistent Project Memory (remember / recall)
+      • Cross-Session Context: Allows agents to save design decisions, deployment configurations (e.g., Caddy proxy rules, environment setups), and troubleshooting steps, retrieving
+      them in future conversations.
+  4. Universal Interoperability
+      • Because it's deployed as a standard MCP HTTP service at <https://hexgh.nlex.uk/mcp>, any MCP-compliant tool (Claude Code, Cursor, Antigravity CLI, VS Code) can use it seamlessly.
+
+The request flow is:
+
+```txt
+Client → Authorization: Bearer <MCP_API_KEY> → MCPAuth plug (secure_compare) → MCPRateLimit (60 req/min/IP) → ExMCP.HttpPlug
+```
+
+### Remember architecture
+
+The `remember` tool uses a custom deduplication and consolidation pipeline backed by PostgreSQL and pgvector. Below is the flowchart of the saving process (`Remember` tool execution):
+
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart TD
+    Start([LLM Client Invokes 'remember' Tool]) --> Spawn[Spawn Background Worker<br/>Task.Supervisor.start_child]
+    Spawn --> ReplyClient[Immediate Response to Client:<br/>accepted: true, status: 'processing']
+    ReplyClient --> EmbedRaw
+    
+    subgraph col1["🔍 Search & Analysis"]
+        EmbedRaw[Mistral.embed/1:<br/>Embed Raw Text]
+        SearchDb[KnowledgeBase.search/2:<br/>KNN search in Postgres]
+        FilterClose{Calculate Similarity:<br/>1.0 - distance >= 0.7?}
+        
+        EmbedRaw --> SearchDb
+        SearchDb --> FilterClose
+    end
+    
+    FilterClose -- "No Close Neighbors<br/>Similarity < 0.7" --> ActionCreate
+    FilterClose -- "Close Neighbors<br/>Found" --> AskMistral
+    
+    subgraph col2["🤖 Decision Logic"]
+        AskMistral[Mistral.chat/3<br/>mistral-large-latest:<br/>Evaluate constraints & changes]
+        DecodeJSON{Decode Decision<br/>JSON}
+        
+        AskMistral --> DecodeJSON
+    end
+    
+    DecodeJSON -- "Action:<br/>Update" --> ActionUpdate[Action: Update<br/>existing ID]
+    DecodeJSON -- "Action:<br/>Create" --> ActionCreate[Action: Create<br/>New Record]
+    DecodeJSON -- "Decode Fail /<br/>Fallback" --> FallbackCreate[Action: Create<br/>Fallback]
+    
+    subgraph col3["📝 Structuring & Embedding"]
+        StructureText[Mistral.chat/3<br/>mistral-small-latest:<br/>Extract metadata:<br/>stack, repo, versions]
+        EmbedFinal[Mistral.embed/1:<br/>Embed 'title: content']
+        
+        StructureText --> EmbedFinal
+    end
+    
+    ActionCreate --> StructureText
+    FallbackCreate --> StructureText
+    ActionUpdate --> StructureText
+    
+    EmbedFinal --> SaveOrUpdate{Execute<br/>Decision}
+    
+    subgraph col4["💾 Persistence"]
+        InsertPostgres[KnowledgeBase.save/1:<br/>Insert to postgres]
+        UpdatePostgres[KnowledgeBase.update/2:<br/>Update postgres]
+        VerifyUpdate{Update<br/>Success?}
+        
+        UpdatePostgres --> VerifyUpdate
+        VerifyUpdate -- "No<br/>ID missing" --> InsertPostgres
+        InsertPostgres --> Done([Done])
+        VerifyUpdate -- "Yes" --> Done
+    end
+    
+    SaveOrUpdate -- "Action:<br/>Create" --> InsertPostgres
+    SaveOrUpdate -- "Action:<br/>Update" --> UpdatePostgres
+    
+    classDef startEnd fill:#f0fdf4,stroke:#4ade80
+    classDef search fill:#ecfeff,stroke:#22d3ee
+    classDef decision fill:#fdf4ff,stroke:#e879f9
+    classDef process fill:#fff7ed,stroke:#fb923c
+    classDef persist fill:#f0f9ff,stroke:#38bdf8
+    classDef subgraphStyle fill:#fefce8,stroke:#facc15
+    
+    class Start,Done startEnd
+    class col1 subgraphStyle
+    class col2 subgraphStyle
+    class col3 subgraphStyle
+    class col4 subgraphStyle
+```
+
+### Recall architecture
+
+The `recall` tool uses Pattern 2 (Two-Phase Candidate Fetching + Reciprocal Rank Fusion + Recency Decay) in PostgreSQL to perform hybrid search across vectors and keywords:
+
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart TD
+    ClientQuery["Client Query: 'Caddy proxy timeout'"] --> Embed[Mistral.embed/1: Compute Vector]
+
+    subgraph Phase1["Phase 1: Dual Candidate Retrieval"]
+        Embed --> VecQuery["Vector Search (HNSW Index)<br/>Fetch Top 20 IDs + Ranks"]
+        ClientQuery --> TextQuery["tsvector GIN Search<br/>Fetch Top 20 IDs + Ranks"]
+    end
+
+    subgraph Phase2["Phase 2: Reciprocal Rank Fusion & Time-Decay"]
+        VecQuery --> MergePool[Merge Candidate Pool & Filter Metadata]
+        TextQuery --> MergePool
+        MergePool --> RRF["Compute RRF Score:<br/>1/(60 + vec_rank) + 1/(60 + text_rank)<br/>× 0.995^age_in_days"]
+    end
+
+    subgraph Phase3["Phase 3: Top 5 Output"]
+        RRF --> Top5[Return Top 5 Fresh & Highly Relevant Learnings]
+    end
+```
 
 ## Configuration
 
@@ -209,12 +377,6 @@ The app exposes public tools via the [Model Context Protocol](https://modelconte
 
 The endpoint is protected by a Bearer token validated with `Plug.Crypto.secure_compare/2` (constant-time comparison). Set `MCP_API_KEY` in your `.env` to enable it. When unset, the endpoint is open.
 
-The request flow is:
-
-```
-Client → Authorization: Bearer <MCP_API_KEY> → MCPAuth plug (secure_compare) → MCPRateLimit (60 req/min/IP) → ExMCP.HttpPlug
-```
-
 ### Connect from Claude Code
 
 Add to your Claude Code MCP settings (`~/.claude.json` or project `.mcp.json`):
@@ -264,45 +426,6 @@ Or use the stdio transport (no web server needed, no auth):
 |------|-------------|
 | `search_hex_packages` | Search Elixir packages on Hex.pm by keyword |
 | `search_github_issues` | Search GitHub issues/PRs across an organization (public repos only) |
-
-## MCP
-### Remember architecture
-
-The `remember` tool uses a custom deduplication and consolidation pipeline backed by PostgreSQL and pgvector. Below is the flowchart of the saving process (`Remember` tool execution):
-
-```mermaid
-flowchart TD
-    Start([LLM Client Invokes 'remember' Tool]) --> Spawn[Spawn Background Worker<br/>Task.Supervisor.start_child]
-    Spawn --> ReplyClient[Immediate Response to Client:<br/>accepted: true, status: 'processing']
-    
-    subgraph Asynchronous Pipeline
-        EmbedRaw[Mistral.embed/1: Embed Raw Text] --> SearchDb[KnowledgeBase.search/2: KNN search in Postgres]
-        SearchDb --> FilterClose{Calculate Similarity:<br/>1.0 - distance >= 0.7?}
-        
-        FilterClose -- "No Close Neighbors (Similarity < 0.7)" --> ActionCreate[Action: Create New Record]
-        FilterClose -- "Close Neighbors Found" --> AskMistral[Mistral.chat/3 via mistral-large-latest:<br/>Evaluate version constraints & changes]
-        
-        AskMistral --> DecodeJSON{Decode Decision JSON}
-        DecodeJSON -- Action: Update --> ActionUpdate[Action: Update existing ID]
-        DecodeJSON -- Action: Create --> ActionCreate
-        DecodeJSON -- Decode Fail / Fallback --> FallbackCreate[Action: Create Fallback]
-        
-        ActionCreate --> StructureText[Mistral.chat/3 via mistral-small-latest:<br/>Extract metadata: stack, repo, versions...]
-        FallbackCreate --> StructureText
-        ActionUpdate --> StructureText
-        
-        StructureText --> EmbedFinal[Mistral.embed/1: Embed 'title: content']
-        EmbedFinal --> SaveOrUpdate{Execute Decision}
-        
-        SaveOrUpdate -- Action: Create --> InsertPostgres[KnowledgeBase.save/1:<br/>Insert to postgres]
-        SaveOrUpdate -- Action: Update --> UpdatePostgres[KnowledgeBase.update/2:<br/>Update postgres]
-        
-        UpdatePostgres --> VerifyUpdate{Update Success?}
-        VerifyUpdate -- Yes --> Done([Done])
-        VerifyUpdate -- No (e.g. ID missing) --> InsertPostgres
-        InsertPostgres --> Done
-    end
-```
 
 ## Testing
 

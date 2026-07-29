@@ -32,9 +32,10 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
   end
 
   defp authenticate(conn) do
-    # Try header authentication first
+    # Try header authentication first (supporting optional "Bearer " prefix)
     case get_req_header(conn, "authorization") do
-      ["Bearer " <> token_value] when token_value != "" ->
+      [header_val] when header_val != "" ->
+        token_value = String.replace_prefix(header_val, "Bearer ", "")
         verify_token(token_value)
 
       _ ->
@@ -53,9 +54,19 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
     if static_token_match?(token_value) do
       {:ok, :static}
     else
-      case Boruta.Config.access_tokens().get_by(value: token_value) do
-        %{} = token -> {:ok, token}
-        nil -> {:error, "token not found"}
+      if Process.whereis(HexGh.Repo) do
+        try do
+          case Boruta.Config.access_tokens().get_by(value: token_value) do
+            %{} = token -> {:ok, token}
+            nil -> {:error, "token not found"}
+          end
+        rescue
+          _ -> {:error, "token not found"}
+        catch
+          :exit, _ -> {:error, "token not found"}
+        end
+      else
+        {:error, "token not found"}
       end
     end
   end

@@ -14,19 +14,39 @@ defmodule HexGh.MCP.Tools.Recall do
     field(:kind, :string,
       description: "Optional filter: learning, pain_point, decision, pattern, or package_note"
     )
+
+    field(:domain, :string, description: "Optional domain filter: deploy, config, code, or debug")
+
+    field(:stack, :string,
+      description: "Optional technology tag filter (e.g. 'caddy', 'postgres', 'bandit', 'elixir')"
+    )
+
+    field(:package, :string,
+      description: "Optional Hex.pm package name filter (e.g. 'phoenix', 'boruta', 'anubis_mcp')"
+    )
   end
 
   @impl true
   def execute(%{query: query} = params, frame) do
-    kind = Map.get(params, :kind)
+    opts =
+      [
+        limit: 5,
+        query: query,
+        kind: Map.get(params, :kind),
+        domain: Map.get(params, :domain),
+        stack: Map.get(params, :stack),
+        package: Map.get(params, :package)
+      ]
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
 
     case Mistral.embed(query) do
       {:ok, embedding} ->
-        results = KnowledgeBase.search(embedding, kind: kind, limit: 5)
+        results = KnowledgeBase.search(embedding, opts)
 
         formatted =
           Enum.map(results, fn r ->
             %{
+              id: r.id,
               title: r.title,
               kind: r.kind,
               content: r.content,
