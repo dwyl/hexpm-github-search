@@ -118,16 +118,16 @@ defmodule HexGh.MCP.Tools.Remember do
     #{existing}
 
     Decide what to do. Pay special attention to:
+    - **Preserving prior learnings**: Do NOT use "replace" unless the old information is factually wrong, obsolete, or superseded. If the new learning adds a complementary aspect or new facet to an existing topic (e.g. embedding model choice vs chat model choice), you MUST use "merge" or "append" to preserve all learnings in the synthesized content.
     - **Package versions**: A fix for library v1 may not apply to v2. If versions differ, prefer "create" to keep both.
     - **API changes**: If an API or behavior changed between versions, the old entry is still valid for its version — prefer "append" or "create".
-    - **Timestamps**: Older entries may be outdated. If the new learning explicitly corrects old info, use "replace".
     - **Evolving fixes**: If the fix improved (e.g. workaround → proper solution), use "replace" with the better fix.
 
     Return ONLY valid JSON with one of:
     1. {"action": "create", "content": "<the new learning text>"} — genuinely new, or version-specific knowledge that shouldn't overwrite the old
-    2. {"action": "update", "id": <existing_id>, "strategy": "replace", "content": "<new content>"} — the new learning supersedes/corrects the old (e.g. fix changed, info is outdated)
+    2. {"action": "update", "id": <existing_id>, "strategy": "replace", "content": "<new content>"} — ONLY if the old info is factually wrong/superseded
     3. {"action": "update", "id": <existing_id>, "strategy": "append", "content": "<old content + new details>"} — the new learning extends the old with additional context, edge cases, or version notes
-    4. {"action": "update", "id": <existing_id>, "strategy": "merge", "content": "<synthesized content>"} — both contain partial truths that should be combined into one comprehensive entry
+    4. {"action": "update", "id": <existing_id>, "strategy": "merge", "content": "<synthesized content combining old + new>"} — both contain partial truths that should be combined into one comprehensive entry
 
     The final content must be self-contained and comprehensive. Include version/date qualifiers when relevant (e.g. "As of pgvector 0.3..." or "Fixed in Phoenix 1.8+").
     """
