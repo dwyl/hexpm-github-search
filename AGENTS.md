@@ -17,6 +17,9 @@ This is a web application written using the Phoenix web framework.
   2. **Cross-Boundary Layer Fixes**: Call `remember` if the fix involved interactions between 2+ layers (e.g., Caddy reverse-proxy + Phoenix SSE, Docker networking + Postgres).
   3. **Library Version Quirks**: Call `remember` if the fix involved an undocumented behavior or version constraint in a dependency.
 
+- **`search_docs` Triggers (Execute BEFORE grepping/answering)**:
+  1. **On Library/Package Usage Questions**: When asked "how to use X", "how to configure X", "how does X work", or for code examples of any dependency (e.g., Postgrex, Ecto, Req, Boruta, Pgvector, Phoenix, Hammer), **ALWAYS call `search_docs` first** to inspect official HexDocs guides, typespecs, and code examples before relying on local code search.
+
 ### Phoenix v1.8 guidelines
 
 - **Always** begin your LiveView templates with `<Layouts.app flash={@flash} ...>` which wraps all inner content

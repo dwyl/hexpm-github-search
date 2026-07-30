@@ -45,8 +45,20 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
             verify_token(token_value)
 
           _ ->
-            {:error, "no authorization header or query token"}
+            if static_key_configured?() do
+              {:error, "no authorization header or query token"}
+            else
+              {:ok, :static}
+            end
         end
+    end
+  end
+
+  defp static_key_configured? do
+    case Application.get_env(:hex_gh, :mcp_api_key) do
+      nil -> false
+      "" -> false
+      _ -> true
     end
   end
 

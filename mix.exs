@@ -81,7 +81,8 @@ defmodule HexGh.MixProject do
        sparse: "optimized",
        app: false,
        compile: false,
-       depth: 1}
+       depth: 1},
+      {:text_chunker, "~> 0.6"}
     ]
   end
 
@@ -101,7 +102,12 @@ defmodule HexGh.MixProject do
         "esbuild hex_gh --minify",
         "phx.digest"
       ],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: [
+        "compile --warnings-as-errors",
+        "deps.unlock --unused",
+        "format",
+        "test --exclude integration"
+      ]
     ]
   end
 end

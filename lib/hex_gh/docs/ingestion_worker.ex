@@ -24,7 +24,7 @@ defmodule HexGh.Docs.IngestionWorker do
 
       docs =
         items
-        |> Enum.map(&build_doc_item(package, resolved_version, &1))
+        |> Enum.flat_map(&build_doc_items(package, resolved_version, &1))
         |> Enum.reject(&is_nil/1)
 
       docs_with_embeddings = attach_embeddings_batch(docs)
@@ -36,7 +36,14 @@ defmodule HexGh.Docs.IngestionWorker do
     docs
     |> Enum.chunk_every(50)
     |> Enum.flat_map(fn batch ->
-      texts = Enum.map(batch, fn d -> "#{d.signature}\n#{d.content}" end)
+      texts =
+        Enum.map(batch, fn d ->
+          sig = d.signature || ""
+          content = d.content || ""
+          text = String.trim("#{sig}\n#{content}")
+          text = if text == "", do: d.title || "doc", else: text
+          String.slice(text, 0, 4000)
+        end)
 
       case Mistral.embed_batch(texts) do
         {:ok, vectors} when is_list(vectors) and length(vectors) == length(batch) ->
@@ -44,7 +51,8 @@ defmodule HexGh.Docs.IngestionWorker do
             Map.put(doc, :embedding, Pgvector.new(vec))
           end)
 
-        _ ->
+        err ->
+          Logger.error("[IngestionWorker] Mistral.embed_batch error: #{inspect(err)}")
           Enum.map(batch, &Map.put(&1, :embedding, nil))
       end
     end)
@@ -81,7 +89,7 @@ defmodule HexGh.Docs.IngestionWorker do
         {:ok, ver}
 
       {:ok, %{status: 404}} ->
-        {:error, :package_not_found}
+        fallback_resolve_package(package)
 
       error ->
         Logger.error("Failed to resolve version for package #{package}: #{inspect(error)}")
@@ -91,8 +99,28 @@ defmodule HexGh.Docs.IngestionWorker do
 
   defp resolve_version(_package, version), do: {:ok, version}
 
+  defp fallback_resolve_package(package) do
+    search_url = "https://hex.pm/api/packages?search=#{URI.encode(package)}"
+
+    case Req.get(search_url, headers: [{"user-agent", "hex_gh/1.0"}]) do
+      {:ok,
+       %{
+         status: 200,
+         body: [%{"name" => _canonical_name, "releases" => [%{"version" => ver} | _]} | _]
+       }} ->
+        {:ok, ver}
+
+      _ ->
+        {:error, :package_not_found}
+    end
+  end
+
   defp fetch_search_data(package, version) do
+    pkg_dashed = String.replace(package, "_", "-")
+
     primary_urls = [
+      "https://#{pkg_dashed}.hexdocs.pm/#{version}/search_data.js",
+      "https://#{pkg_dashed}.hexdocs.pm/search_data.js",
       "https://#{package}.hexdocs.pm/#{version}/search_data.js",
       "https://#{package}.hexdocs.pm/search_data.js",
       "https://hexdocs.pm/#{package}/#{version}/search_data.js"
@@ -121,7 +149,11 @@ defmodule HexGh.Docs.IngestionWorker do
   end
 
   defp fetch_search_data_fallback(package, version) do
+    pkg_dashed = String.replace(package, "_", "-")
+
     urls = [
+      "https://#{pkg_dashed}.hexdocs.pm/#{version}/",
+      "https://#{pkg_dashed}.hexdocs.pm/api-reference.html",
       "https://#{package}.hexdocs.pm/#{version}/",
       "https://#{package}.hexdocs.pm/api-reference.html",
       "https://hexdocs.pm/#{package}/#{version}/"
@@ -193,7 +225,7 @@ defmodule HexGh.Docs.IngestionWorker do
       |> String.split("sidebarNodes=", parts: 2)
       |> Enum.at(1)
       |> String.trim()
-      |> String.trim_trailing(";")
+      |> String.replace(~r/;*\s*$/, "")
 
     case Jason.decode(json_str) do
       {:ok, map} ->
@@ -201,6 +233,7 @@ defmodule HexGh.Docs.IngestionWorker do
         {:ok, %{"items" => items}}
 
       {:error, err} ->
+        Logger.error("[IngestionWorker] sidebarNodes JSON decode error: #{inspect(err)}")
         {:error, {:invalid_json, err}}
     end
   end
@@ -260,34 +293,167 @@ defmodule HexGh.Docs.IngestionWorker do
     module_items ++ extra_items
   end
 
-  defp build_doc_item(package, version, item) when is_map(item) do
+  def build_doc_item(package, version, item) do
+    case build_doc_items(package, version, item) do
+      [first | _] -> first
+      _ -> nil
+    end
+  end
+
+  def build_doc_items(package, version, item) when is_map(item) do
     ref = Map.get(item, "ref", "")
     title = Map.get(item, "title", Map.get(item, "name", ""))
     doc_text = Map.get(item, "doc", Map.get(item, "doc_html", ""))
-    type = Map.get(item, "type", "doc")
+    type = to_string(Map.get(item, "type", "doc"))
+    hexdocs_url = "https://hexdocs.pm/#{package}/#{version}/#{ref}"
 
-    if doc_text != "" || title != "" do
+    content =
+      if type == "guide" and (doc_text == "" or String.length(doc_text) < 100) do
+        fetched = fetch_guide_content(hexdocs_url)
+        if fetched != "", do: fetched, else: doc_text
+      else
+        doc_text
+      end
+
+    if content != "" || title != "" do
       {module, function} = parse_title_and_module(title, ref)
-      code_snippet = extract_code_snippet(doc_text)
-      hexdocs_url = "https://hexdocs.pm/#{package}/#{version}/#{ref}"
+
+      if type == "guide" or String.length(content) > 1500 do
+        chunk_content(content, %{
+          package: package,
+          version: version,
+          doc_type: type,
+          module: module,
+          function: function,
+          base_signature: title,
+          base_url: hexdocs_url
+        })
+      else
+        code_snippet = extract_code_snippet(content)
+
+        [
+          %{
+            package: package,
+            version: version,
+            doc_type: type,
+            module: module,
+            function: function,
+            signature: title,
+            content: content,
+            code_snippet: code_snippet,
+            hexdocs_url: hexdocs_url
+          }
+        ]
+      end
+    else
+      []
+    end
+  end
+
+  def build_doc_items(_package, _version, _item), do: []
+
+  @doc """
+  Fetches HTML content for a guide page from HexDocs and extracts plain text / markdown content.
+  """
+  def fetch_guide_content(url) when is_binary(url) do
+    case Req.get(url, headers: [{"user-agent", "hex_gh/1.0"}], redirect: :follow) do
+      {:ok, %{status: 200, body: html}} when is_binary(html) ->
+        extract_text_from_html(html)
+
+      _ ->
+        ""
+    end
+  end
+
+  def fetch_guide_content(_), do: ""
+
+  @doc """
+  Strips HTML tags and converts HTML guide pages to plain text.
+  """
+  def extract_text_from_html(html) when is_binary(html) do
+    content_html =
+      case Regex.run(
+             ~r/<(?:div|main)[^>]*id=["'](?:content|main)["'][^>]*>(.*)<\/(?:div|main)>/s,
+             html
+           ) do
+        [_, inner] -> inner
+        _ -> html
+      end
+
+    content_html
+    |> String.replace(~r/<script.*?>.*?<\/script>/is, "")
+    |> String.replace(~r/<style.*?>.*?<\/style>/is, "")
+    |> String.replace(~r/<(p|h[1-6]|li|br|div|tr|section|article)[^>]*>/i, "\n")
+    |> String.replace(~r/<[^>]+>/, "")
+    |> decode_html_entities()
+    |> String.replace(~r/\n\s*\n/, "\n\n")
+    |> String.trim()
+  end
+
+  def extract_text_from_html(_), do: ""
+
+  defp decode_html_entities(text) when is_binary(text) do
+    text
+    |> String.replace("&lt;", "<")
+    |> String.replace("&gt;", ">")
+    |> String.replace("&amp;", "&")
+    |> String.replace("&quot;", "\"")
+    |> String.replace("&#39;", "'")
+    |> String.replace("&nbsp;", " ")
+  end
+
+  defp chunk_content(content, %{
+         package: package,
+         version: version,
+         doc_type: type,
+         module: module,
+         function: function,
+         base_signature: title,
+         base_url: base_url
+       }) do
+    chunks =
+      case TextChunker.split(content, chunk_size: 400, chunk_overlap: 40) do
+        {:ok, list} -> list
+        list when is_list(list) -> list
+        _ -> [content]
+      end
+
+    total_chunks = length(chunks)
+
+    chunks
+    |> Enum.with_index(1)
+    |> Enum.map(fn {chunk, idx} ->
+      chunk_text =
+        case chunk do
+          %TextChunker.Chunk{text: t} -> t
+          t when is_binary(t) -> t
+          _ -> to_string(chunk)
+        end
+
+      {sig_suffix, url_anchor} =
+        if total_chunks > 1 do
+          {" - Part #{idx}", "#part-#{idx}"}
+        else
+          {"", ""}
+        end
+
+      signature = "#{title}#{sig_suffix}"
+      hexdocs_url = "#{base_url}#{url_anchor}"
+      code_snippet = extract_code_snippet(chunk_text)
 
       %{
         package: package,
         version: version,
-        doc_type: to_string(type),
+        doc_type: type,
         module: module,
         function: function,
-        signature: title,
-        content: doc_text,
+        signature: signature,
+        content: chunk_text,
         code_snippet: code_snippet,
         hexdocs_url: hexdocs_url
       }
-    else
-      nil
-    end
+    end)
   end
-
-  defp build_doc_item(_package, _version, _item), do: nil
 
   defp parse_title_and_module(title, ref) do
     cond do
