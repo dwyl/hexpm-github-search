@@ -27,9 +27,27 @@ defmodule HexGh.Docs.IngestionWorker do
         |> Enum.map(&build_doc_item(package, resolved_version, &1))
         |> Enum.reject(&is_nil/1)
 
-      docs_with_embeddings = Enum.map(docs, &attach_embedding/1)
+      docs_with_embeddings = attach_embeddings_batch(docs)
       save_docs(docs_with_embeddings, package, resolved_version)
     end
+  end
+
+  defp attach_embeddings_batch(docs) do
+    docs
+    |> Enum.chunk_every(50)
+    |> Enum.flat_map(fn batch ->
+      texts = Enum.map(batch, fn d -> "#{d.signature}\n#{d.content}" end)
+
+      case Mistral.embed_batch(texts) do
+        {:ok, vectors} when is_list(vectors) and length(vectors) == length(batch) ->
+          Enum.zip_with(batch, vectors, fn doc, vec ->
+            Map.put(doc, :embedding, Pgvector.new(vec))
+          end)
+
+        _ ->
+          Enum.map(batch, &Map.put(&1, :embedding, nil))
+      end
+    end)
   end
 
   defp save_docs(docs_with_embeddings, package, version) do
@@ -309,16 +327,4 @@ defmodule HexGh.Docs.IngestionWorker do
   end
 
   def extract_code_snippet(_), do: nil
-
-  defp attach_embedding(doc) do
-    embedding_input = "#{doc.signature}\n#{doc.content}"
-
-    case Mistral.embed(embedding_input) do
-      {:ok, vector} when is_list(vector) ->
-        Map.put(doc, :embedding, Pgvector.new(vector))
-
-      _ ->
-        Map.put(doc, :embedding, nil)
-    end
-  end
 end

@@ -54,14 +54,31 @@ defmodule HexGh.AI.Mistral do
            | %{:__exception__ => any(), :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}
   def embed(text) when is_binary(text) do
-    body = %{model: embed_model(), input: [text]}
+    case embed_batch([text]) do
+      {:ok, [embedding | _]} -> {:ok, embedding}
+      {:error, _} = error -> error
+    end
+  end
 
-    case post("/embeddings", body) do
-      {:ok, %{"data" => [%{"embedding" => embedding} | _]}} ->
-        {:ok, embedding}
+  @spec embed_batch([binary()]) :: {:ok, [[float()]]} | {:error, term()}
+  def embed_batch(texts) when is_list(texts) do
+    if texts == [] do
+      {:ok, []}
+    else
+      body = %{model: embed_model(), input: texts}
 
-      {:error, _} = error ->
-        error
+      case post("/embeddings", body) do
+        {:ok, %{"data" => data}} when is_list(data) ->
+          embeddings =
+            data
+            |> Enum.sort_by(& &1["index"])
+            |> Enum.map(& &1["embedding"])
+
+          {:ok, embeddings}
+
+        {:error, _} = error ->
+          error
+      end
     end
   end
 
