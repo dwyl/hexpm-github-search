@@ -28,7 +28,6 @@ defmodule HexGh.PromEx do
     [
       {:prom_ex, "application.json"},
       {:prom_ex, "beam.json"},
-      {:prom_ex, "phoenix.json"},
       {:prom_ex, "ecto.json"}
     ]
   end
