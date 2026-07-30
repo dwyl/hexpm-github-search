@@ -86,23 +86,30 @@
     {
       "title": "Similarity When Creating Despite Neighbors",
       "description": "High values (>0.8) suggest the model is being lazy and should merge instead of creating.",
-      "type": "histogram",
+      "type": "barchart",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
       "datasource": { "uid": "prometheus_hexgh" },
       "targets": [
         {
           "expr": "hex_gh_knowledge_decision_similarity_bucket{action=\"create\", had_neighbors=\"true\"}",
-          "legendFormat": "{{ le }}",
-          "format": "heatmap"
+          "legendFormat": "≤{{ le }}",
+          "instant": true
         }
       ],
       "options": {
-        "bucketSize": "auto",
-        "combine": false,
-        "fillOpacity": 80
+        "orientation": "vertical",
+        "barWidth": 0.8,
+        "showValue": "always",
+        "stacking": "none"
       },
       "fieldConfig": {
-        "defaults": { "unit": "percentunit" }
+        "defaults": { "unit": "short" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "≤+Inf" },
+            "properties": [{ "id": "custom.hideFrom", "value": { "legend": true, "tooltip": true, "viz": true } }]
+          }
+        ]
       }
     },
     {
