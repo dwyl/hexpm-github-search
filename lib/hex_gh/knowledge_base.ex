@@ -193,10 +193,11 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Caddy buffers HTTP responses by default, breaking Server-Sent Events (SSE) connections used by MCP StreamableHTTP transport. The MCP client sees a connection but never receives tool capabilities.",
         metadata: %{
+          domain: "deploy",
+          stack: ["caddy", "mcp", "sse"],
           symptom: "MCP client connects but reports 'Capabilities: none'",
           cause: "Caddy buffers chunked/SSE responses instead of streaming them",
-          fix: "Add `flush_interval -1` to the Caddy reverse_proxy directive",
-          context: ["MCP", "SSE", "Caddy", "reverse proxy"]
+          fix: "Add `flush_interval -1` to the Caddy reverse_proxy directive"
         }
       },
       %{
@@ -205,10 +206,12 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Bandit HTTP server doesn't automatically flush response chunks like Cowboy. SSE connections hang unless you explicitly use `Plug.Conn.chunk/2` after `send_chunked/2`.",
         metadata: %{
+          domain: "code",
+          stack: ["elixir", "bandit", "sse", "plug"],
+          package: "bandit",
           symptom: "SSE connections established but no events received",
           cause: "Bandit requires explicit chunk writing, unlike Cowboy",
-          fix: "Use Plug.Conn.chunk/2 for each SSE event, or use Anubis's built-in SSE handling",
-          context: ["Bandit", "SSE", "Plug", "streaming"]
+          fix: "Use Plug.Conn.chunk/2 for each SSE event, or use Anubis's built-in SSE handling"
         }
       },
       %{
@@ -217,11 +220,12 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Services in different Docker Compose projects can't reach each other's databases by default. The hex_gh container couldn't connect to crm_postgres in another project.",
         metadata: %{
+          domain: "deploy",
+          stack: ["docker", "postgres"],
           symptom: "Database connection refused or timeout",
           cause: "Docker containers in separate compose files are on isolated networks",
           fix:
-            "Use external Docker network (e.g., crm_backend) shared between compose files, reference container name as hostname",
-          context: ["Docker", "PostgreSQL", "networking"]
+            "Use external Docker network (e.g., crm_backend) shared between compose files, reference container name as hostname"
         }
       },
       %{
@@ -230,11 +234,13 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Boruta OAuth library uses PostgreSQL-specific features (JSONB, gen_random_uuid(), array columns) making it incompatible with SQLite. Required adding a full Postgres setup.",
         metadata: %{
+          domain: "config",
+          stack: ["elixir", "postgres", "sqlite"],
+          package: "boruta",
+          package_version: "~> 3.0.0-beta.4",
           symptom: "Migration errors with SQLite database",
           cause: "Boruta migrations use PostgreSQL-only data types and functions",
-          fix:
-            "Use PostgreSQL database; connect to existing Postgres instance via Docker network",
-          context: ["Boruta", "OAuth", "PostgreSQL", "SQLite"]
+          fix: "Use PostgreSQL database; connect to existing Postgres instance via Docker network"
         }
       },
       %{
@@ -243,10 +249,12 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Argon2 hashes contain `$` characters which Docker Compose interprets as variable references in .env files, causing authentication to fail with mangled hashes.",
         metadata: %{
+          domain: "deploy",
+          stack: ["docker", "elixir"],
+          package: "argon2_elixir",
           symptom: "Admin login always fails despite correct password",
           cause: "Docker .env file interpolates $ in Argon2 hash as variable reference",
-          fix: "Escape `$` as `$$` in docker-compose .env files",
-          context: ["Docker", "Argon2", "authentication", "environment variables"]
+          fix: "Escape `$` as `$$` in docker-compose .env files"
         }
       },
       %{
@@ -255,10 +263,12 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Default OAuth token TTL (1 hour) causes Claude Code MCP connections to expire during long coding sessions, requiring re-authentication.",
         metadata: %{
+          domain: "config",
+          stack: ["elixir", "mcp", "boruta"],
+          package: "boruta",
           symptom: "MCP connection drops after token expiry",
           cause: "Default Boruta token TTL is too short for interactive CLI usage",
-          fix: "Extend token TTL to 1 year (31536000 seconds) in Boruta config",
-          context: ["OAuth", "Boruta", "Claude Code", "token management"]
+          fix: "Extend token TTL to 1 year (31536000 seconds) in Boruta config"
         }
       },
       %{
@@ -267,10 +277,13 @@ defmodule HexGh.KnowledgeBase do
         content:
           "The original MCP server module was named HexGh.MCPServer but Anubis expected HexGh.MCP.Server. The mismatch caused silent tool registration failures.",
         metadata: %{
+          domain: "code",
+          stack: ["elixir", "mcp", "otp"],
+          package: "anubis_mcp",
+          repo: "jfim/anubis-mcp",
           symptom: "Tools registered at compile time but not available at runtime",
           cause: "Module name in supervision tree didn't match the Anubis server module",
-          fix: "Ensure consistent module naming between server definition and application.ex",
-          context: ["Anubis", "MCP", "module naming", "OTP"]
+          fix: "Ensure consistent module naming between server definition and application.ex"
         }
       },
       %{
@@ -279,11 +292,12 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Unconditional `raise` in runtime.exs for optional service credentials crashes all release commands (migrate, eval) even when those commands don't need the service.",
         metadata: %{
+          domain: "config",
+          stack: ["elixir", "phoenix"],
           symptom: "Mix release commands crash with missing env var errors",
           cause: "runtime.exs runs for ALL release commands, not just the server",
           fix:
-            "Guard raises with feature flag checks: only raise when the feature requiring the credential is enabled",
-          context: ["releases", "runtime.exs", "configuration", "deployment"]
+            "Guard raises with feature flag checks: only raise when the feature requiring the credential is enabled"
         }
       },
       %{
@@ -292,12 +306,12 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Calling Application.get_env inside runtime.exs returns compile-time values, not the values being set in the same file. Config writes go to an accumulator applied after the file finishes.",
         metadata: %{
+          domain: "config",
+          stack: ["elixir"],
           symptom: "Config values appear as nil despite being set earlier in the same file",
-          cause:
-            "runtime.exs config writes to accumulator, Application.get_env reads compiled env",
+          cause: "runtime.exs config writes to accumulator, Application.get_env reads compiled env",
           fix:
-            "Store values in local variables and reference those instead of Application.get_env",
-          context: ["runtime.exs", "configuration", "releases", "Config provider"]
+            "Store values in local variables and reference those instead of Application.get_env"
         }
       },
       %{
@@ -306,12 +320,14 @@ defmodule HexGh.KnowledgeBase do
         content:
           "PostgreSQL extensions are scoped to individual databases. Running CREATE EXTENSION vector in one database (e.g. crm_reactor_prod) does not make it available in another (e.g. hex_gh). The migration fails with 'type vector does not exist' if the extension isn't enabled in the target database.",
         metadata: %{
+          domain: "deploy",
+          stack: ["postgres", "pgvector"],
+          package: "pgvector",
           symptom:
             "Migration fails with 'type vector does not exist' despite extension installed in another database",
           cause: "CREATE EXTENSION is per-database in PostgreSQL, not a server-level setting",
           fix:
-            "Run CREATE EXTENSION IF NOT EXISTS vector in the specific database (e.g. psql -U superuser -d hex_gh -c 'CREATE EXTENSION IF NOT EXISTS vector;')",
-          context: ["PostgreSQL", "pgvector", "extensions", "migrations"]
+            "Run CREATE EXTENSION IF NOT EXISTS vector in the specific database (e.g. psql -U superuser -d hex_gh -c 'CREATE EXTENSION IF NOT EXISTS vector;')"
         }
       },
       %{
@@ -320,13 +336,16 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Postgrex cannot handle the vector type by default. Without registering Pgvector.extensions() in a custom types module, queries fail with 'type vector can not be handled by the types module Postgrex.DefaultTypes'.",
         metadata: %{
+          domain: "config",
+          stack: ["elixir", "postgres", "postgrex", "ecto"],
+          package: "pgvector",
+          package_version: "~> 0.3",
           symptom:
             "Postgrex.QueryError: type 'vector' can not be handled by Postgrex.DefaultTypes",
           cause:
             "Postgrex needs custom type extensions registered to encode/decode pgvector types",
           fix:
-            "Create a types module with Postgrex.Types.define(MyApp.PostgrexTypes, Pgvector.extensions() ++ Ecto.Adapters.Postgres.extensions(), []) and add types: MyApp.PostgrexTypes to Repo config",
-          context: ["pgvector", "Postgrex", "Ecto", "type extensions"]
+            "Create a types module with Postgrex.Types.define(MyApp.PostgrexTypes, Pgvector.extensions() ++ Ecto.Adapters.Postgres.extensions(), []) and add types: MyApp.PostgrexTypes to Repo config"
         }
       },
       %{
@@ -335,11 +354,12 @@ defmodule HexGh.KnowledgeBase do
         content:
           "The standard postgres Docker image does not include the pgvector extension. CREATE EXTENSION vector fails with 'could not open extension control file'. Must use the pgvector/pgvector:pgXX-bookworm image variant matching your PostgreSQL version.",
         metadata: %{
+          domain: "deploy",
+          stack: ["docker", "postgres", "pgvector"],
           symptom: "CREATE EXTENSION vector fails with 'could not open extension control file'",
           cause: "Standard postgres Docker image doesn't ship with pgvector extension files",
           fix:
-            "Switch Docker image from postgres:XX to pgvector/pgvector:pgXX-bookworm (e.g. pgvector/pgvector:pg18-bookworm)",
-          context: ["Docker", "PostgreSQL", "pgvector", "extensions"]
+            "Switch Docker image from postgres:XX to pgvector/pgvector:pgXX-bookworm (e.g. pgvector/pgvector:pg18-bookworm)"
         }
       }
     ]

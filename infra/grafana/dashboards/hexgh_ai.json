@@ -64,6 +64,66 @@
       "fieldConfig": {
         "defaults": { "unit": "short" }
       }
+    },
+    {
+      "title": "Knowledge Base",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "collapsed": false
+    },
+    {
+      "title": "KB Decisions",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
+      "datasource": { "uid": "prometheus_hexgh" },
+      "targets": [
+        {
+          "expr": "sum by (action, had_neighbors) (hex_gh_knowledge_decision_total)",
+          "legendFormat": "{{ action }} (neighbors={{ had_neighbors }})"
+        }
+      ]
+    },
+    {
+      "title": "Similarity When Creating Despite Neighbors",
+      "description": "High values (>0.8) suggest the model is being lazy and should merge instead of creating.",
+      "type": "histogram",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
+      "datasource": { "uid": "prometheus_hexgh" },
+      "targets": [
+        {
+          "expr": "hex_gh_knowledge_decision_similarity_bucket{action=\"create\", had_neighbors=\"true\"}",
+          "legendFormat": "{{ le }}",
+          "format": "heatmap"
+        }
+      ],
+      "options": {
+        "bucketSize": "auto",
+        "combine": false,
+        "fillOpacity": 80
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit" }
+      }
+    },
+    {
+      "title": "KB Decisions Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
+      "datasource": { "uid": "prometheus_hexgh" },
+      "targets": [
+        {
+          "expr": "sum by (action, strategy) (increase(hex_gh_knowledge_decision_total[1h]))",
+          "legendFormat": "{{ action }}/{{ strategy }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "drawStyle": "bars",
+        "stacking": { "mode": "normal" }
+      }
     }
   ],
   "templating": { "list": [] },

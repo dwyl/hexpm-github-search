@@ -33,10 +33,46 @@ defmodule HexGh.MCP.Tools.Remember do
      frame}
   end
 
+  defp log_decision(%{action: "create"}, []) do
+    Logger.info("[KB decision] create (no neighbors)")
+    emit_decision_telemetry("create", "n/a", false, 0.0)
+    :ok
+  end
+
+  defp log_decision(%{action: "create"}, neighbors) do
+    top_sim = neighbors |> Enum.map(fn n -> 1.0 - n.distance end) |> Enum.max(fn -> 0.0 end)
+    top = Enum.map(neighbors, fn n -> {n.title, Float.round(1.0 - n.distance, 3)} end)
+    Logger.info("[KB decision] create despite #{length(neighbors)} neighbor(s): #{inspect(top)}")
+    emit_decision_telemetry("create", "n/a", true, top_sim)
+    :ok
+  end
+
+  defp log_decision(%{action: action, id: id} = decision, neighbors) do
+    strategy = Map.get(decision, :strategy, "n/a")
+    top_sim = neighbors |> Enum.map(fn n -> 1.0 - n.distance end) |> Enum.max(fn -> 0.0 end)
+    Logger.info("[KB decision] #{action} (#{strategy}) on entry ##{id}")
+    emit_decision_telemetry(action, strategy, true, top_sim)
+    :ok
+  end
+
+  defp log_decision(decision, _neighbors) do
+    Logger.info("[KB decision] #{inspect(decision)}")
+    :ok
+  end
+
+  defp emit_decision_telemetry(action, strategy, had_neighbors, top_similarity) do
+    :telemetry.execute(
+      [:hex_gh, :knowledge, :decision],
+      %{count: 1, top_similarity: Float.round(top_similarity, 4)},
+      %{action: action, strategy: strategy, had_neighbors: had_neighbors}
+    )
+  end
+
   defp process(text) do
     with {:ok, embedding} <- Mistral.embed(text),
          neighbors <- KnowledgeBase.search(embedding, limit: 3),
          {:ok, decision} <- decide(text, neighbors),
+         :ok <- log_decision(decision, neighbors),
          {:ok, structured} <- structure_text(decision.content),
          embedding_text <- build_embedding_text(structured, decision.content),
          {:ok, final_embedding} <- Mistral.embed(embedding_text) do
