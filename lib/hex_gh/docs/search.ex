@@ -21,6 +21,12 @@ defmodule HexGh.Docs.Search do
 
     if package && package != "" do
       maybe_auto_ingest(package)
+    else
+      query
+      |> String.downcase()
+      |> String.split(~r/[^\w-]+/, trim: true)
+      |> Enum.take(3)
+      |> Enum.each(&maybe_auto_ingest/1)
     end
 
     base_query =
