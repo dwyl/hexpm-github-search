@@ -136,12 +136,25 @@ compile-time tools: ["recall", "remember", "search_github_issues", "search_hex_p
 The request flow is:
 
 ```txt
-Client → Authorization: Bearer <MCP_API_KEY> → MCPAuth plug (secure_compare) → MCPRateLimit (60 req/min/IP) → ExMCP.HttpPlug
+Client → Authorization: Bearer <MCP_API_KEY> → BearerAuth plug (secure_compare) → MCPRateLimit (60 req/min/IP) → Anubis StreamableHTTP
 ```
 
 ### Remember architecture
 
-The `remember` tool uses a custom deduplication and consolidation pipeline backed by PostgreSQL and pgvector. Below is the flowchart of the saving process (`Remember` tool execution):
+The `remember` tool uses a custom deduplication and consolidation pipeline backed by PostgreSQL and pgvector. When a new learning arrives, the system embeds it, searches for similar existing entries, and delegates the create/update/discard decision to a medium-tier LLM (configurable via `MISTRAL_MODEL_LARGE`).
+
+#### Decision taxonomy
+
+| Action | When | What happens |
+|-----------|-------------------------------------------------------|---------------------------------------|
+| **create** | No similar neighbors (similarity < 0.7) | New entry |
+| **discard** | Too similar (> 0.9), no additional value | Do nothing |
+| **append** | Similar neighbor, new info adds value | Concatenate to existing content |
+| **merge** | Overlapping but complementary info | Synthesize old + new into one entry |
+| **replace** | Old info is factually wrong/superseded | Replace content of existing entry |
+| **deprecate** | Neighbor is outdated by new info | Mark old as `outdated=true` |
+
+#### Flowchart
 
 ```mermaid
 ---
@@ -152,65 +165,72 @@ flowchart TD
     Start([LLM Client Invokes 'remember' Tool]) --> Spawn[Spawn Background Worker<br/>Task.Supervisor.start_child]
     Spawn --> ReplyClient[Immediate Response to Client:<br/>accepted: true, status: 'processing']
     ReplyClient --> EmbedRaw
-    
-    subgraph col1["🔍 Search & Analysis"]
+
+    subgraph col1["Search & Analysis"]
         EmbedRaw[Mistral.embed/1:<br/>Embed Raw Text]
         SearchDb[KnowledgeBase.search/2:<br/>KNN search in Postgres]
-        FilterClose{Calculate Similarity:<br/>1.0 - distance >= 0.7?}
-        
+        FilterClose{Similarity<br/>>= 0.7?}
+
         EmbedRaw --> SearchDb
         SearchDb --> FilterClose
     end
-    
+
     FilterClose -- "No Close Neighbors<br/>Similarity < 0.7" --> ActionCreate
     FilterClose -- "Close Neighbors<br/>Found" --> AskMistral
-    
-    subgraph col2["🤖 Decision Logic"]
-        AskMistral[Mistral.chat/3<br/>mistral-large-latest:<br/>Evaluate constraints & changes]
+
+    subgraph col2["Decision Logic (medium model)"]
+        AskMistral[Mistral.chat/3<br/>mistral-medium-latest:<br/>Evaluate with decision guide]
         DecodeJSON{Decode Decision<br/>JSON}
-        
+
         AskMistral --> DecodeJSON
     end
-    
-    DecodeJSON -- "Action:<br/>Update" --> ActionUpdate[Action: Update<br/>existing ID]
-    DecodeJSON -- "Action:<br/>Create" --> ActionCreate[Action: Create<br/>New Record]
-    DecodeJSON -- "Decode Fail /<br/>Fallback" --> FallbackCreate[Action: Create<br/>Fallback]
-    
-    subgraph col3["📝 Structuring & Embedding"]
-        StructureText[Mistral.chat/3<br/>mistral-small-latest:<br/>Extract metadata:<br/>stack, repo, versions]
-        EmbedFinal[Mistral.embed/1:<br/>Embed 'title: content']
-        
+
+    DecodeJSON -- "discard" --> ActionDiscard([Discard:<br/>Do Nothing])
+    DecodeJSON -- "append / merge /<br/>replace" --> ActionUpdate[Update<br/>existing entry]
+    DecodeJSON -- "deprecate" --> ActionDeprecate[Mark old as<br/>outdated=true]
+    DecodeJSON -- "create" --> ActionCreate[Create<br/>New Entry]
+    DecodeJSON -- "Decode Fail /<br/>Fallback" --> FallbackCreate[Create<br/>Fallback]
+
+    subgraph col3["Structuring & Embedding (small model)"]
+        StructureText[Mistral.chat/3<br/>mistral-small-latest:<br/>Extract metadata:<br/>domain, stack, versions]
+        EmbedFinal[Mistral.embed/1:<br/>Embed structured text]
+
         StructureText --> EmbedFinal
     end
-    
+
     ActionCreate --> StructureText
     FallbackCreate --> StructureText
     ActionUpdate --> StructureText
-    
+
     EmbedFinal --> SaveOrUpdate{Execute<br/>Decision}
-    
-    subgraph col4["💾 Persistence"]
-        InsertPostgres[KnowledgeBase.save/1:<br/>Insert to postgres]
-        UpdatePostgres[KnowledgeBase.update/2:<br/>Update postgres]
+
+    subgraph col4["Persistence"]
+        InsertPostgres[KnowledgeBase.save/1:<br/>Insert to Postgres]
+        UpdatePostgres[KnowledgeBase.update/2:<br/>Update Postgres]
+        DeprecatePostgres[KnowledgeBase.deprecate/2:<br/>Soft-delete]
         VerifyUpdate{Update<br/>Success?}
-        
+
         UpdatePostgres --> VerifyUpdate
         VerifyUpdate -- "No<br/>ID missing" --> InsertPostgres
         InsertPostgres --> Done([Done])
         VerifyUpdate -- "Yes" --> Done
+        DeprecatePostgres --> Done
     end
-    
-    SaveOrUpdate -- "Action:<br/>Create" --> InsertPostgres
-    SaveOrUpdate -- "Action:<br/>Update" --> UpdatePostgres
-    
+
+    SaveOrUpdate -- "Create" --> InsertPostgres
+    SaveOrUpdate -- "Update" --> UpdatePostgres
+    ActionDeprecate --> DeprecatePostgres
+
     classDef startEnd fill:#f0fdf4,stroke:#4ade80
     classDef search fill:#ecfeff,stroke:#22d3ee
     classDef decision fill:#fdf4ff,stroke:#e879f9
     classDef process fill:#fff7ed,stroke:#fb923c
     classDef persist fill:#f0f9ff,stroke:#38bdf8
     classDef subgraphStyle fill:#fefce8,stroke:#facc15
-    
+    classDef discardStyle fill:#fef2f2,stroke:#f87171
+
     class Start,Done startEnd
+    class ActionDiscard discardStyle
     class col1 subgraphStyle
     class col2 subgraphStyle
     class col3 subgraphStyle
@@ -253,10 +273,11 @@ All settings are in `config/runtime.exs`, read from environment variables:
 | ---------- | --------- | ------------- |
 | `MISTRAL_API_KEY` | required | Mistral API key |
 | `MISTRAL_API_URL` | `https://api.mistral.ai/v1` | Mistral API base URL |
-| `MISTRAL_CHAT_MODEL` | `mistral-small-latest` | Chat/intent/synthesis model |
-| `MISTRAL_EMBED_MODEL` | `mistral-embed` | Embedding model |
+| `MISTRAL_MODEL_SMALL` | `mistral-small-latest` | Cheap model for structuring, metadata extraction |
+| `MISTRAL_MODEL_LARGE` | `mistral-medium-latest` | Capable model for judgment calls (dedup decisions) |
+| `MISTRAL_MODEL_EMBED` | `mistral-embed` | Embedding model |
 | `MISTRAL_EMBED_DIMENSIONS` | `1024` | Embedding vector dimensions |
-| `MISTRAL_TRANSCRIPTION_MODEL` | `mistral-large-latest` | Audio transcription model |
+| `MISTRAL_TRANSCRIPTION_MODEL` | `voxtral-mini-latest` | Audio transcription model |
 | `GITHUB_API_URL` | `https://api.github.com` | GitHub API base URL |
 | `GITHUB_TOKEN` | optional | GitHub personal access token |
 | `HEX_API_URL` | `https://hex.pm/api` | Hex.pm API base URL |

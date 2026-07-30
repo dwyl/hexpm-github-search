@@ -310,7 +310,8 @@ defmodule HexGh.KnowledgeBase do
           domain: "config",
           stack: ["elixir"],
           symptom: "Config values appear as nil despite being set earlier in the same file",
-          cause: "runtime.exs config writes to accumulator, Application.get_env reads compiled env",
+          cause:
+            "runtime.exs config writes to accumulator, Application.get_env reads compiled env",
           fix:
             "Store values in local variables and reference those instead of Application.get_env"
         }
@@ -365,21 +366,21 @@ defmodule HexGh.KnowledgeBase do
       }
     ]
 
-    Enum.each(pain_points, fn entry ->
-      if Repo.exists?(from(k in Knowledge, where: k.title == ^entry.title)) do
-        IO.puts("Skipped (exists): #{entry.title}")
-      else
-        text = "#{entry.title}: #{entry.content}"
+    Enum.each(pain_points, &seed_entry/1)
+  end
 
-        case Mistral.embed(text) do
-          {:ok, embedding} ->
-            {:ok, _} = save(Map.put(entry, :embedding, embedding))
-            IO.puts("Saved: #{entry.title}")
+  defp seed_entry(entry) do
+    if Repo.exists?(from(k in Knowledge, where: k.title == ^entry.title)) do
+      IO.puts("Skipped (exists): #{entry.title}")
+    else
+      case Mistral.embed("#{entry.title}: #{entry.content}") do
+        {:ok, embedding} ->
+          {:ok, _} = save(Map.put(entry, :embedding, embedding))
+          IO.puts("Saved: #{entry.title}")
 
-          {:error, reason} ->
-            IO.puts("Failed to embed '#{entry.title}': #{inspect(reason)}")
-        end
+        {:error, reason} ->
+          IO.puts("Failed to embed '#{entry.title}': #{inspect(reason)}")
       end
-    end)
+    end
   end
 end

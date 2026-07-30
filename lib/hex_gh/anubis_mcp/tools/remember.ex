@@ -79,23 +79,25 @@ defmodule HexGh.MCP.Tools.Remember do
     with {:ok, embedding} <- Mistral.embed(text),
          neighbors <- KnowledgeBase.search(embedding, limit: 3),
          {:ok, decision} <- decide(text, neighbors),
-         :ok <- log_decision(decision, neighbors) do
-      if decision.action == "discard" do
-        Logger.info("Knowledge base: discarded (too similar to existing entry)")
-      else
-        with {:ok, structured} <- structure_text(decision.content),
-             embedding_text <- build_embedding_text(structured, decision.content),
-             {:ok, final_embedding} <- Mistral.embed(embedding_text) do
-          result = execute_decision(decision, structured, final_embedding)
-          Logger.info("Knowledge base: #{result.action} — #{result.title}")
-        else
-          {:error, reason} ->
-            Logger.error("Knowledge base remember failed: #{inspect(reason)}")
-        end
-      end
+         :ok <- log_decision(decision, neighbors),
+         {:ok, result} <- apply_decision(decision) do
+      Logger.info("Knowledge base: #{result}")
     else
       {:error, reason} ->
         Logger.error("Knowledge base remember failed: #{inspect(reason)}")
+    end
+  end
+
+  defp apply_decision(%{action: "discard"}) do
+    {:ok, "discarded (too similar to existing entry)"}
+  end
+
+  defp apply_decision(decision) do
+    with {:ok, structured} <- structure_text(decision.content),
+         embedding_text <- build_embedding_text(structured, decision.content),
+         {:ok, final_embedding} <- Mistral.embed(embedding_text) do
+      result = execute_decision(decision, structured, final_embedding)
+      {:ok, "#{result.action} — #{result.title}"}
     end
   end
 
@@ -253,45 +255,8 @@ defmodule HexGh.MCP.Tools.Remember do
       {:ok, %{"content" => content}} ->
         case Jason.decode(clean_json(content)) do
           {:ok, parsed} ->
-            metadata =
-              %{
-                symptom: parsed["symptom"],
-                cause: parsed["cause"],
-                fix: parsed["fix"],
-                domain: parsed["domain"],
-                stack: parsed["stack"] || [],
-                package: parsed["package"],
-                package_version: parsed["package_version"],
-                resolved_in: parsed["resolved_in"],
-                repo: parsed["repo"]
-              }
-              |> Enum.reject(fn {_k, v} -> is_nil(v) end)
-              |> Map.new()
-
-            raw_kind = parsed["kind"]
-            allowed_kinds = ~w(learning pain_point decision pattern package_note)
-
-            {kind, metadata} =
-              cond do
-                is_nil(raw_kind) ->
-                  {"learning", metadata}
-
-                raw_kind in allowed_kinds ->
-                  {raw_kind, metadata}
-
-                true ->
-                  normalized =
-                    case raw_kind do
-                      "bug" -> "pain_point"
-                      "caveat" -> "pain_point"
-                      "workaround" -> "pain_point"
-                      "tip" -> "learning"
-                      "info" -> "learning"
-                      _ -> "learning"
-                    end
-
-                  {normalized, Map.put(metadata, :raw_kind, raw_kind)}
-              end
+            metadata = extract_metadata(parsed)
+            {kind, metadata} = normalize_kind(parsed["kind"], metadata)
 
             {:ok,
              %{
@@ -359,9 +324,42 @@ defmodule HexGh.MCP.Tools.Remember do
 
   defp parse_id(_), do: :error
 
+  defp extract_metadata(parsed) do
+    %{
+      symptom: parsed["symptom"],
+      cause: parsed["cause"],
+      fix: parsed["fix"],
+      domain: parsed["domain"],
+      stack: parsed["stack"] || [],
+      package: parsed["package"],
+      package_version: parsed["package_version"],
+      resolved_in: parsed["resolved_in"],
+      repo: parsed["repo"]
+    }
+    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    |> Map.new()
+  end
+
+  @allowed_kinds ~w(learning pain_point decision pattern package_note)
+
+  defp normalize_kind(nil, metadata), do: {"learning", metadata}
+  defp normalize_kind(kind, metadata) when kind in @allowed_kinds, do: {kind, metadata}
+
+  defp normalize_kind(raw_kind, metadata) do
+    normalized =
+      case raw_kind do
+        "bug" -> "pain_point"
+        "caveat" -> "pain_point"
+        "workaround" -> "pain_point"
+        "tip" -> "learning"
+        "info" -> "learning"
+        _ -> "learning"
+      end
+
+    {normalized, Map.put(metadata, :raw_kind, raw_kind)}
+  end
+
   defp stringify_keys(map) when is_map(map) do
     Map.new(map, fn {k, v} -> {to_string(k), v} end)
   end
-
-  defp stringify_keys(_), do: %{}
 end
