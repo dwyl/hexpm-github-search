@@ -8,12 +8,13 @@ defmodule HexGh.Knowledge do
     field(:content, :string)
     field(:metadata, :map, default: %{})
     field(:embedding, Pgvector.Ecto.Vector)
+    field(:outdated, :boolean, default: false)
 
     timestamps()
   end
 
   @required ~w(kind title content embedding)a
-  @optional ~w(metadata)a
+  @optional ~w(metadata outdated)a
 
   def changeset(knowledge \\ %__MODULE__{}, attrs) do
     knowledge

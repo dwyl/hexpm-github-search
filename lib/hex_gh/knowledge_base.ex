@@ -20,6 +20,25 @@ defmodule HexGh.KnowledgeBase do
     end
   end
 
+  def deprecate(id, reason \\ nil) when is_integer(id) do
+    case Repo.get(Knowledge, id) do
+      nil ->
+        {:error, :not_found}
+
+      entry ->
+        meta =
+          Map.put(
+            entry.metadata || %{},
+            "deprecated_reason",
+            reason || "Marked as outdated by user/curator"
+          )
+
+        entry
+        |> Knowledge.changeset(%{outdated: true, metadata: meta})
+        |> Repo.update()
+    end
+  end
+
   def search(embedding, opts \\ []) when is_list(embedding) do
     query_text = Keyword.get(opts, :query) || Keyword.get(opts, :query_text)
 
@@ -41,7 +60,8 @@ defmodule HexGh.KnowledgeBase do
     WITH pre_filtered AS (
       SELECT id, title, kind, content, metadata, updated_at, embedding, search_vector
       FROM knowledge
-      WHERE ($1::text IS NULL OR kind = $1)
+      WHERE (outdated = false)
+        AND ($1::text IS NULL OR kind = $1)
         AND ($2::text IS NULL OR metadata->>'domain' = $2)
         AND ($3::text IS NULL OR metadata->>'package' = $3)
         AND ($4::text IS NULL OR metadata->'stack' @> jsonb_build_array($4::text))
@@ -114,7 +134,7 @@ defmodule HexGh.KnowledgeBase do
     stack = Keyword.get(opts, :stack)
     package = Keyword.get(opts, :package)
 
-    query = from(k in Knowledge)
+    query = from(k in Knowledge, where: k.outdated == false)
 
     query = if kind, do: from(k in query, where: k.kind == ^kind), else: query
 

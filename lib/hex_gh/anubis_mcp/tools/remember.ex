@@ -120,6 +120,7 @@ defmodule HexGh.MCP.Tools.Remember do
     2. {"action": "update", "id": <existing_id>, "strategy": "replace", "content": "<new content>"} — ONLY if the old info is factually wrong/superseded
     3. {"action": "update", "id": <existing_id>, "strategy": "append", "content": "<old content + new details>"} — the new learning extends the old with additional context, edge cases, or version notes
     4. {"action": "update", "id": <existing_id>, "strategy": "merge", "content": "<synthesized content combining old + new>"} — both contain partial truths that should be combined into one comprehensive entry
+    5. {"action": "deprecate", "id": <existing_id>, "reason": "<why entry is obsolete/deprecated>"} — the existing entry is completely wrong, dangerous, or obsolete and should be soft-deleted
 
     The final content must be self-contained and comprehensive. Include version/date qualifiers when relevant (e.g. "As of pgvector 0.3..." or "Fixed in Phoenix 1.8+").
     """
@@ -136,6 +137,20 @@ defmodule HexGh.MCP.Tools.Remember do
   defp execute_decision(%{action: "create"}, structured, embedding) do
     {:ok, entry} = KnowledgeBase.save(Map.put(structured, :embedding, embedding))
     %{action: "created", id: entry.id, title: entry.title}
+  end
+
+  defp execute_decision(%{action: "deprecate", id: id} = decision, _structured, _embedding) do
+    dec_meta = stringify_keys(decision)
+    reason = Map.get(dec_meta, "reason")
+    Logger.info("Knowledge base: deprecating entry ##{id} (reason: #{inspect(reason)})")
+
+    case KnowledgeBase.deprecate(id, reason) do
+      {:ok, entry} ->
+        %{action: "deprecated", id: entry.id, title: entry.title}
+
+      {:error, _} ->
+        %{action: "error (deprecate failed)", id: id}
+    end
   end
 
   defp execute_decision(%{action: "update", id: id, strategy: strategy}, structured, embedding) do
