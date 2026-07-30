@@ -56,7 +56,7 @@ defmodule HexGh.Docs.Poller do
     Process.send_after(self(), :poll, delay)
   end
 
-  def do_poll do
+  defp do_poll do
     url = "https://hex.pm/api/packages?sort=updated_at&page=1"
 
     case Req.get(url, headers: [{"user-agent", "hex_gh/1.0"}]) do

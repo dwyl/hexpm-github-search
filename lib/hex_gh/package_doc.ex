@@ -2,6 +2,8 @@ defmodule HexGh.PackageDoc do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   schema "package_docs" do
     field(:package, :string)
     field(:version, :string)

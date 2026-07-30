@@ -22,6 +22,7 @@ defmodule HexGh.Application do
         {DNSCluster, query: Application.get_env(:hex_gh, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: HexGh.PubSub},
         {Finch, name: HexGh.Finch, pools: %{"https://api.mistral.ai" => [size: 10]}},
+        {Registry, keys: :unique, name: HexGh.IngestionRegistry},
         {Task.Supervisor, name: HexGh.TaskSupervisor},
         HexGh.Memory,
         {HexGh.Docs.Poller, enabled: Application.get_env(:hex_gh, :docs_poller_enabled, true)},

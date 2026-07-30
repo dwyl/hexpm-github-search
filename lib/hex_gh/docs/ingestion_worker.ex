@@ -18,44 +18,62 @@ defmodule HexGh.Docs.IngestionWorker do
   """
   @spec ingest(String.t(), String.t()) :: {:ok, integer()} | {:error, term()}
   def ingest(package, version \\ "latest") when is_binary(package) do
-    with {:ok, resolved_version} <- resolve_version(package, version),
-         {:ok, search_data} <- fetch_search_data(package, resolved_version) do
+    key = {__MODULE__, package}
+
+    case Registry.register(HexGh.IngestionRegistry, key, :running) do
+      {:ok, _} ->
+        try do
+          do_ingest(package, version)
+        after
+          Registry.unregister(HexGh.IngestionRegistry, key)
+        end
+
+      {:error, {:already_registered, _}} ->
+        Logger.info("[IngestionWorker] skipping #{package} — already ingesting")
+        {:error, :already_ingesting}
+    end
+  end
+
+  defp do_ingest(package, version) do
+    with {:ok, canonical, resolved_version} <- resolve_package(package, version),
+         {:ok, search_data} <- fetch_search_data(canonical, resolved_version) do
       items = Map.get(search_data, "items", [])
 
       docs =
         items
-        |> Enum.flat_map(&build_doc_items(package, resolved_version, &1))
+        |> Enum.flat_map(&build_doc_items(canonical, resolved_version, &1))
         |> Enum.reject(&is_nil/1)
 
       docs_with_embeddings = attach_embeddings_batch(docs)
-      save_docs(docs_with_embeddings, package, resolved_version)
+      save_docs(docs_with_embeddings, canonical, resolved_version)
     end
   end
 
   defp attach_embeddings_batch(docs) do
     docs
     |> Enum.chunk_every(50)
-    |> Enum.flat_map(fn batch ->
-      texts =
-        Enum.map(batch, fn d ->
-          sig = d.signature || ""
-          content = d.content || ""
-          text = String.trim("#{sig}\n#{content}")
-          text = if text == "", do: d.title || "doc", else: text
-          String.slice(text, 0, 4000)
+    |> Enum.flat_map(&embed_batch/1)
+  end
+
+  defp embed_batch(batch) do
+    texts = Enum.map(batch, &doc_to_embed_text/1)
+
+    case Mistral.embed_batch(texts) do
+      {:ok, vectors} when is_list(vectors) and length(vectors) == length(batch) ->
+        Enum.zip_with(batch, vectors, fn doc, vec ->
+          Map.put(doc, :embedding, Pgvector.new(vec))
         end)
 
-      case Mistral.embed_batch(texts) do
-        {:ok, vectors} when is_list(vectors) and length(vectors) == length(batch) ->
-          Enum.zip_with(batch, vectors, fn doc, vec ->
-            Map.put(doc, :embedding, Pgvector.new(vec))
-          end)
+      err ->
+        Logger.error("[IngestionWorker] Mistral.embed_batch error: #{inspect(err)}")
+        Enum.map(batch, &Map.put(&1, :embedding, nil))
+    end
+  end
 
-        err ->
-          Logger.error("[IngestionWorker] Mistral.embed_batch error: #{inspect(err)}")
-          Enum.map(batch, &Map.put(&1, :embedding, nil))
-      end
-    end)
+  defp doc_to_embed_text(doc) do
+    text = String.trim("#{doc.signature || ""}\n#{doc.content || ""}")
+    text = if text == "", do: doc.title || "doc", else: text
+    String.slice(text, 0, 4000)
   end
 
   defp save_docs(docs_with_embeddings, package, version) do
@@ -81,23 +99,23 @@ defmodule HexGh.Docs.IngestionWorker do
     end)
   end
 
-  defp resolve_version(package, "latest") do
+  defp resolve_package(package, "latest") do
     url = "https://hex.pm/api/packages/#{package}"
 
     case Req.get(url, headers: [{"user-agent", "hex_gh/1.0"}]) do
       {:ok, %{status: 200, body: %{"releases" => [%{"version" => ver} | _]}}} ->
-        {:ok, ver}
+        {:ok, package, ver}
 
       {:ok, %{status: 404}} ->
         fallback_resolve_package(package)
 
       error ->
-        Logger.error("Failed to resolve version for package #{package}: #{inspect(error)}")
+        Logger.error("Failed to resolve package #{package}: #{inspect(error)}")
         {:error, :version_resolution_failed}
     end
   end
 
-  defp resolve_version(_package, version), do: {:ok, version}
+  defp resolve_package(package, version), do: {:ok, package, version}
 
   defp fallback_resolve_package(package) do
     search_url = "https://hex.pm/api/packages?search=#{URI.encode(package)}"
@@ -106,9 +124,10 @@ defmodule HexGh.Docs.IngestionWorker do
       {:ok,
        %{
          status: 200,
-         body: [%{"name" => _canonical_name, "releases" => [%{"version" => ver} | _]} | _]
+         body: [%{"name" => canonical, "releases" => [%{"version" => ver} | _]} | _]
        }} ->
-        {:ok, ver}
+        Logger.info("[IngestionWorker] resolved fuzzy '#{package}' → canonical '#{canonical}'")
+        {:ok, canonical, ver}
 
       _ ->
         {:error, :package_not_found}
@@ -242,40 +261,7 @@ defmodule HexGh.Docs.IngestionWorker do
     modules = Map.get(map, "modules", [])
     extras = Map.get(map, "extras", [])
 
-    module_items =
-      Enum.flat_map(modules, fn mod ->
-        mod_id = Map.get(mod, "id", "")
-        mod_title = Map.get(mod, "title", mod_id)
-
-        mod_item = %{
-          "ref" => "#{mod_id}.html",
-          "title" => mod_title,
-          "doc" => mod_title,
-          "type" => "module"
-        }
-
-        node_groups = Map.get(mod, "nodeGroups", [])
-
-        func_items =
-          Enum.flat_map(node_groups, fn group ->
-            key = Map.get(group, "key", "function")
-            nodes = Map.get(group, "nodes", [])
-
-            Enum.map(nodes, fn node ->
-              node_id = Map.get(node, "id", "")
-              anchor = Map.get(node, "anchor", node_id)
-
-              %{
-                "ref" => "#{mod_id}.html##{anchor}",
-                "title" => "#{mod_title}.#{node_id}",
-                "doc" => "#{mod_title}.#{node_id}",
-                "type" => key
-              }
-            end)
-          end)
-
-        [mod_item | func_items]
-      end)
+    module_items = Enum.flat_map(modules, &extract_module_items/1)
 
     extra_items =
       Enum.map(extras, fn extra ->
@@ -291,6 +277,43 @@ defmodule HexGh.Docs.IngestionWorker do
       end)
 
     module_items ++ extra_items
+  end
+
+  defp extract_module_items(mod) do
+    mod_id = Map.get(mod, "id", "")
+    mod_title = Map.get(mod, "title", mod_id)
+
+    mod_item = %{
+      "ref" => "#{mod_id}.html",
+      "title" => mod_title,
+      "doc" => mod_title,
+      "type" => "module"
+    }
+
+    func_items =
+      mod
+      |> Map.get("nodeGroups", [])
+      |> Enum.flat_map(&extract_node_group_items(mod_id, mod_title, &1))
+
+    [mod_item | func_items]
+  end
+
+  defp extract_node_group_items(mod_id, mod_title, group) do
+    key = Map.get(group, "key", "function")
+
+    group
+    |> Map.get("nodes", [])
+    |> Enum.map(fn node ->
+      node_id = Map.get(node, "id", "")
+      anchor = Map.get(node, "anchor", node_id)
+
+      %{
+        "ref" => "#{mod_id}.html##{anchor}",
+        "title" => "#{mod_title}.#{node_id}",
+        "doc" => "#{mod_title}.#{node_id}",
+        "type" => key
+      }
+    end)
   end
 
   def build_doc_item(package, version, item) do
@@ -413,7 +436,6 @@ defmodule HexGh.Docs.IngestionWorker do
        }) do
     chunks =
       case TextChunker.split(content, chunk_size: 400, chunk_overlap: 40) do
-        {:ok, list} -> list
         list when is_list(list) -> list
         _ -> [content]
       end

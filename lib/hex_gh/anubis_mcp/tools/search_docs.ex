@@ -40,7 +40,7 @@ defmodule HexGh.MCP.Tools.SearchDocs do
       limit: 10
     ]
 
-    results = Search.search(query, opts)
+    {results, notices} = Search.search(query, opts)
 
     formatted =
       Enum.map(results, fn r ->
@@ -58,7 +58,14 @@ defmodule HexGh.MCP.Tools.SearchDocs do
         }
       end)
 
-    {:reply, Response.tool() |> Response.text(Jason.encode!(formatted)), frame}
+    payload =
+      if notices == [] do
+        %{results: formatted}
+      else
+        %{results: formatted, notices: notices}
+      end
+
+    {:reply, Response.tool() |> Response.text(Jason.encode!(payload)), frame}
   rescue
     e ->
       {:error, Error.execution("Search docs failed: #{Exception.message(e)}"), frame}

@@ -32,25 +32,31 @@ defmodule HexGhWeb.Plugs.MCPBearerAuth do
   end
 
   defp authenticate(conn) do
-    # Try header authentication first (supporting optional "Bearer " prefix)
+    with :miss <- extract_header_token(conn),
+         :miss <- extract_query_token(conn) do
+      if static_key_configured?(),
+        do: {:error, "no authorization header or query token"},
+        else: {:ok, :static}
+    end
+  end
+
+  defp extract_header_token(conn) do
     case get_req_header(conn, "authorization") do
       [header_val] when header_val != "" ->
-        token_value = String.replace_prefix(header_val, "Bearer ", "")
+        header_val |> String.replace_prefix("Bearer ", "") |> verify_token()
+
+      _ ->
+        :miss
+    end
+  end
+
+  defp extract_query_token(conn) do
+    case conn.query_params["token"] || conn.query_params["access_token"] do
+      token_value when is_binary(token_value) and token_value != "" ->
         verify_token(token_value)
 
       _ ->
-        # Fallback to query parameter "token" or "access_token"
-        case conn.query_params["token"] || conn.query_params["access_token"] do
-          token_value when is_binary(token_value) and token_value != "" ->
-            verify_token(token_value)
-
-          _ ->
-            if static_key_configured?() do
-              {:error, "no authorization header or query token"}
-            else
-              {:ok, :static}
-            end
-        end
+        :miss
     end
   end
 
