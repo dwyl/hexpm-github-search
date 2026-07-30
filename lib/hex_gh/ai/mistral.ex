@@ -19,7 +19,7 @@ defmodule HexGh.AI.Mistral do
 
   def large_model do
     Application.get_env(:hex_gh, :mistral_model_large) ||
-      Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-latest")
+      Application.get_env(:hex_gh, :mistral_chat_model, "mistral-medium-latest")
   end
 
   def embed_model do
