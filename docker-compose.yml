@@ -1,6 +1,7 @@
 services:
   hexgh:
     build: .
+    container_name: hexgh_app
     ports:
       # VPS host : container port
       - "${HOST_PORT:-4001}:4000"

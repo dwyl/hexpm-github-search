@@ -132,7 +132,7 @@ defmodule HexGh.MCP.Tools.Remember do
     The final content must be self-contained and comprehensive. Include version/date qualifiers when relevant (e.g. "As of pgvector 0.3..." or "Fixed in Phoenix 1.8+").
     """
 
-    case Mistral.chat([%{role: "user", content: prompt}], [], model: "mistral-large-latest") do
+    case Mistral.chat([%{role: "user", content: prompt}], [], model: Mistral.large_model()) do
       {:ok, %{"content" => content}} ->
         parse_decision(content, text)
 
@@ -183,7 +183,7 @@ defmodule HexGh.MCP.Tools.Remember do
     Text: #{text}
     """
 
-    case Mistral.chat([%{role: "user", content: prompt}], [], model: "mistral-small-latest") do
+    case Mistral.chat([%{role: "user", content: prompt}], [], model: Mistral.small_model()) do
       {:ok, %{"content" => content}} ->
         case Jason.decode(clean_json(content)) do
           {:ok, parsed} ->

@@ -27,8 +27,9 @@ config :hex_gh,
   # Mistral AI
   mistral_api_url: System.get_env("MISTRAL_API_URL", "https://api.mistral.ai/v1"),
   mistral_api_key: System.get_env("MISTRAL_API_KEY"),
-  mistral_chat_model: System.get_env("MISTRAL_CHAT_MODEL", "mistral-small-latest"),
-  mistral_embed_model: System.get_env("MISTRAL_EMBED_MODEL", "mistral-embed"),
+  mistral_model_small: System.get_env("MISTRAL_MODEL_SMALL", "mistral-small-2603"),
+  mistral_model_large: System.get_env("MISTRAL_MODEL_LARGE", "mistral-small-2603"),
+  mistral_model_embed: System.get_env("MISTRAL_MODEL_EMBED", "codestral-embed-2505"),
   mistral_embed_dimensions: String.to_integer(System.get_env("MISTRAL_EMBED_DIMENSIONS", "1024")),
   mistral_transcription_model:
     System.get_env("MISTRAL_TRANSCRIPTION_MODEL", "voxtral-mini-latest"),

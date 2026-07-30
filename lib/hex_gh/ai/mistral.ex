@@ -11,8 +11,21 @@ defmodule HexGh.AI.Mistral do
   require Logger
 
   defp base_url, do: Application.get_env(:hex_gh, :mistral_api_url, "https://api.mistral.ai/v1")
-  defp chat_model, do: Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-latest")
-  defp embed_model, do: Application.get_env(:hex_gh, :mistral_embed_model, "mistral-embed")
+
+  def small_model do
+    Application.get_env(:hex_gh, :mistral_model_small) ||
+      Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-2603")
+  end
+
+  def large_model do
+    Application.get_env(:hex_gh, :mistral_model_large) ||
+      Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-2603")
+  end
+
+  def embed_model do
+    Application.get_env(:hex_gh, :mistral_model_embed) ||
+      Application.get_env(:hex_gh, :mistral_embed_model, "codestral-embed-2505")
+  end
 
   defp api_key do
     Application.get_env(:hex_gh, :mistral_api_key) ||
@@ -25,8 +38,10 @@ defmodule HexGh.AI.Mistral do
            | %{:__exception__ => any(), :__struct__ => atom(), optional(atom()) => any()}}
           | {:ok, any()}
   def chat(messages, tools \\ [], opts \\ []) do
+    model = Keyword.get(opts, :model, small_model())
+
     body =
-      %{model: Keyword.get(opts, :model, chat_model()), messages: messages}
+      %{model: model, messages: messages}
       |> maybe_add_tools(tools, opts)
 
     post("/chat/completions", body)
