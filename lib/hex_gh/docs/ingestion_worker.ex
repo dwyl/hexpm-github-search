@@ -170,12 +170,17 @@ defmodule HexGh.Docs.IngestionWorker do
   defp fetch_search_data_fallback(package, version) do
     pkg_dashed = String.replace(package, "_", "-")
 
+    mod_name = package |> String.split("_") |> Enum.map_join(&String.capitalize/1)
+
     urls = [
-      "https://#{pkg_dashed}.hexdocs.pm/#{version}/",
+      "https://#{pkg_dashed}.hexdocs.pm/#{version}/api-reference.html",
       "https://#{pkg_dashed}.hexdocs.pm/api-reference.html",
-      "https://#{package}.hexdocs.pm/#{version}/",
+      "https://#{pkg_dashed}.hexdocs.pm/#{mod_name}.html",
+      "https://#{package}.hexdocs.pm/#{version}/api-reference.html",
       "https://#{package}.hexdocs.pm/api-reference.html",
-      "https://hexdocs.pm/#{package}/#{version}/"
+      "https://#{package}.hexdocs.pm/#{mod_name}.html",
+      "https://hexdocs.pm/#{package}/#{version}/api-reference.html",
+      "https://hexdocs.pm/#{package}/#{version}/#{mod_name}.html"
     ]
 
     Enum.find_value(urls, {:error, :search_data_not_found}, fn index_url ->
