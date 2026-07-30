@@ -64,7 +64,7 @@ defmodule HexGh.MCP.Tools.Remember do
     :telemetry.execute(
       [:hex_gh, :knowledge, :decision],
       %{count: 1, top_similarity: Float.round(top_similarity, 4)},
-      %{action: action, strategy: strategy, had_neighbors: had_neighbors}
+      %{action: action, strategy: strategy, had_neighbors: to_string(had_neighbors)}
     )
   end
 
