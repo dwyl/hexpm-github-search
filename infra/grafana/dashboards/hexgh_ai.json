@@ -14,7 +14,7 @@
       "datasource": { "uid": "prometheus_hexgh" },
       "targets": [
         {
-          "expr": "sum by (model) (rate(hex_gh_prom_ex_hex_gh_ai_metrics_total_tokens_total[5m]))",
+          "expr": "sum by (model) (rate(hex_gh_ai_mistral_total_tokens_total[5m]))",
           "legendFormat": "{{ model }}"
         }
       ],
@@ -29,7 +29,7 @@
       "datasource": { "uid": "prometheus_hexgh" },
       "targets": [
         {
-          "expr": "sum by (model) (hex_gh_prom_ex_hex_gh_ai_metrics_total_tokens_total)",
+          "expr": "sum by (model) (hex_gh_ai_mistral_total_tokens_total)",
           "legendFormat": "{{ model }}"
         }
       ]
@@ -41,7 +41,7 @@
       "datasource": { "uid": "prometheus_hexgh" },
       "targets": [
         {
-          "expr": "sum(hex_gh_prom_ex_hex_gh_ai_metrics_request_total)",
+          "expr": "sum(hex_gh_ai_mistral_request_total)",
           "legendFormat": "Total Requests"
         }
       ]
@@ -53,11 +53,11 @@
       "datasource": { "uid": "prometheus_hexgh" },
       "targets": [
         {
-          "expr": "sum by (model) (rate(hex_gh_prom_ex_hex_gh_ai_metrics_prompt_tokens_total[5m]))",
+          "expr": "sum by (model) (rate(hex_gh_ai_mistral_prompt_tokens_total[5m]))",
           "legendFormat": "Prompt - {{ model }}"
         },
         {
-          "expr": "sum by (model) (rate(hex_gh_prom_ex_hex_gh_ai_metrics_completion_tokens_total[5m]))",
+          "expr": "sum by (model) (rate(hex_gh_ai_mistral_completion_tokens_total[5m]))",
           "legendFormat": "Completion - {{ model }}"
         }
       ],
