@@ -47,5 +47,7 @@ npm-debug.log
 .elixir_ls
 .expert
 .mcp.json
+.agent/
+.agents/
 
 
