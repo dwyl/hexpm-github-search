@@ -33,6 +33,13 @@ defmodule HexGh.MCP.Tools.Remember do
      frame}
   end
 
+  defp log_decision(%{action: "discard"}, neighbors) do
+    top_sim = neighbors |> Enum.map(fn n -> 1.0 - n.distance end) |> Enum.max(fn -> 0.0 end)
+    Logger.info("[KB decision] discard (too similar, top_sim=#{Float.round(top_sim, 3)})")
+    emit_decision_telemetry("discard", "n/a", true, top_sim)
+    :ok
+  end
+
   defp log_decision(%{action: "create"}, []) do
     Logger.info("[KB decision] create (no neighbors)")
     emit_decision_telemetry("create", "n/a", false, 0.0)
@@ -72,12 +79,20 @@ defmodule HexGh.MCP.Tools.Remember do
     with {:ok, embedding} <- Mistral.embed(text),
          neighbors <- KnowledgeBase.search(embedding, limit: 3),
          {:ok, decision} <- decide(text, neighbors),
-         :ok <- log_decision(decision, neighbors),
-         {:ok, structured} <- structure_text(decision.content),
-         embedding_text <- build_embedding_text(structured, decision.content),
-         {:ok, final_embedding} <- Mistral.embed(embedding_text) do
-      result = execute_decision(decision, structured, final_embedding)
-      Logger.info("Knowledge base: #{result.action} — #{result.title}")
+         :ok <- log_decision(decision, neighbors) do
+      if decision.action == "discard" do
+        Logger.info("Knowledge base: discarded (too similar to existing entry)")
+      else
+        with {:ok, structured} <- structure_text(decision.content),
+             embedding_text <- build_embedding_text(structured, decision.content),
+             {:ok, final_embedding} <- Mistral.embed(embedding_text) do
+          result = execute_decision(decision, structured, final_embedding)
+          Logger.info("Knowledge base: #{result.action} — #{result.title}")
+        else
+          {:error, reason} ->
+            Logger.error("Knowledge base remember failed: #{inspect(reason)}")
+        end
+      end
     else
       {:error, reason} ->
         Logger.error("Knowledge base remember failed: #{inspect(reason)}")
@@ -152,11 +167,19 @@ defmodule HexGh.MCP.Tools.Remember do
     - **Evolving fixes**: If the fix improved (e.g. workaround → proper solution), use "replace" with the better fix.
 
     Return ONLY valid JSON with one of:
-    1. {"action": "create", "content": "<the new learning text>"} — genuinely new, or version-specific knowledge that shouldn't overwrite the old
-    2. {"action": "update", "id": <existing_id>, "strategy": "replace", "content": "<new content>"} — ONLY if the old info is factually wrong/superseded
-    3. {"action": "update", "id": <existing_id>, "strategy": "append", "content": "<old content + new details>"} — the new learning extends the old with additional context, edge cases, or version notes
+    1. {"action": "create", "content": "<the new learning text>"} — genuinely new topic, or version-specific knowledge that shouldn't overwrite the old
+    2. {"action": "discard"} — the new learning is essentially the same as an existing entry with no additional value. Use this when similarity is very high and no new information is present.
+    3. {"action": "update", "id": <existing_id>, "strategy": "append", "content": "<old content + new details>"} — the new learning extends the old with additional context, edge cases, or version notes. PRESERVES all existing content.
     4. {"action": "update", "id": <existing_id>, "strategy": "merge", "content": "<synthesized content combining old + new>"} — both contain partial truths that should be combined into one comprehensive entry
-    5. {"action": "deprecate", "id": <existing_id>, "reason": "<why entry is obsolete/deprecated>"} — the existing entry is completely wrong, dangerous, or obsolete and should be soft-deleted
+    5. {"action": "update", "id": <existing_id>, "strategy": "replace", "content": "<new content>"} — ONLY if the old info is factually wrong/superseded by the new learning
+    6. {"action": "deprecate", "id": <existing_id>, "reason": "<why entry is obsolete/deprecated>"} — the existing entry is completely wrong, dangerous, or obsolete and should be soft-deleted
+
+    DECISION GUIDE (in order of preference):
+    - Similarity > 0.9 and no new facts → "discard"
+    - Similarity > 0.8 and new details/edge cases → "append"
+    - Overlapping but complementary info → "merge"
+    - Old info is wrong or superseded → "replace"
+    - Completely different topic despite embedding proximity → "create"
 
     The final content must be self-contained and comprehensive. Include version/date qualifiers when relevant (e.g. "As of pgvector 0.3..." or "Fixed in Phoenix 1.8+").
     """
@@ -302,6 +325,9 @@ defmodule HexGh.MCP.Tools.Remember do
 
   defp parse_decision(content, original_text) do
     case Jason.decode(clean_json(content)) do
+      {:ok, %{"action" => "discard"}} ->
+        {:ok, %{action: "discard"}}
+
       {:ok, %{"action" => "update", "id" => id, "content" => merged} = parsed} ->
         strategy = parsed["strategy"] || "merge"
         resolve_update(parse_id(id), merged, strategy)

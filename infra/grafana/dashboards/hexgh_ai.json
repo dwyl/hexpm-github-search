@@ -91,7 +91,7 @@
       "datasource": { "uid": "prometheus_hexgh" },
       "targets": [
         {
-          "expr": "hex_gh_knowledge_decision_similarity_bucket",
+          "expr": "hex_gh_knowledge_decision_similarity_bucket{action=\"create\", had_neighbors=\"true\"}",
           "legendFormat": "≤{{ le }}",
           "instant": true
         }
