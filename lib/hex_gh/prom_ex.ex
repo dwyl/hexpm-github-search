@@ -10,7 +10,8 @@ defmodule HexGh.PromEx do
       Plugins.Application,
       Plugins.Beam,
       {Plugins.Phoenix, router: HexGhWeb.Router, endpoint: HexGhWeb.Endpoint},
-      Plugins.Ecto
+      Plugins.Ecto,
+      HexGh.PromEx.AIPlugin
     ]
   end
 

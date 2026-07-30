@@ -8,6 +8,8 @@ defmodule HexGh.AI.Mistral do
   search_github_issues, save_memory) via `tool_choice: "any"`.
   """
 
+  require Logger
+
   defp base_url, do: Application.get_env(:hex_gh, :mistral_api_url, "https://api.mistral.ai/v1")
   defp chat_model, do: Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-latest")
   defp embed_model, do: Application.get_env(:hex_gh, :mistral_embed_model, "mistral-embed")
@@ -97,6 +99,10 @@ defmodule HexGh.AI.Mistral do
       model: model,
       path: path
     }
+
+    Logger.info(
+      "[Mistral Telemetry] model=#{model} path=#{path} prompt_tokens=#{measurements.prompt_tokens} completion_tokens=#{measurements.completion_tokens} total_tokens=#{measurements.total_tokens}"
+    )
 
     :telemetry.execute([:hex_gh, :ai, :mistral, :request], measurements, metadata)
   end
