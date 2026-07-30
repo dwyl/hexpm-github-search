@@ -14,17 +14,17 @@ defmodule HexGh.AI.Mistral do
 
   def small_model do
     Application.get_env(:hex_gh, :mistral_model_small) ||
-      Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-2603")
+      Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-latest")
   end
 
   def large_model do
     Application.get_env(:hex_gh, :mistral_model_large) ||
-      Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-2603")
+      Application.get_env(:hex_gh, :mistral_chat_model, "mistral-small-latest")
   end
 
   def embed_model do
     Application.get_env(:hex_gh, :mistral_model_embed) ||
-      Application.get_env(:hex_gh, :mistral_embed_model, "codestral-embed-2505")
+      Application.get_env(:hex_gh, :mistral_embed_model, "mistral-embed")
   end
 
   defp api_key do
