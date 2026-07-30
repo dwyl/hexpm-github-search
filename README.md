@@ -265,6 +265,55 @@ flowchart TD
     end
 ```
 
+### Search Docs architecture
+
+The `search_docs` tool provides semantic search over Hex package documentation, typespecs, and code examples stored in PostgreSQL with pgvector.
+
+#### Key design decisions
+
+**Lazy ingestion over pre-indexing** — Hex.pm has 15k+ packages. Instead of pre-indexing everything, `search_docs` triggers ingestion on first query for an unknown package. The search call blocks up to 15 seconds (via `Task.yield`) while the package is ingested — if it completes in time, results are returned in a single MCP call. A `Registry`-based lock prevents duplicate ingestion.
+
+**ExDoc's `search_data.js` as primary source** — Instead of scraping HTML, the ingestion worker parses ExDoc's pre-built search index. Module names, function signatures, typespecs — all pre-extracted and structured. A fallback chain handles ExDoc version differences:
+
+| ExDoc format | Variable name | Typical version |
+|---|---|---|
+| Modern | `searchData` | ExDoc 0.30+ |
+| Legacy | `searchNodes` | ExDoc 0.28-0.29 |
+| Sidebar | `sidebarNodes` | Older / Erlang projects |
+
+**Fuzzy package resolution** — If a user searches for "oauth" (not a real package name), the ingestion worker falls back to `hex.pm/api/packages?search=oauth` and resolves the canonical package name (e.g. `oauth2`). Docs are stored under the correct name.
+
+#### Guide chunking with text_chunker
+
+ExDoc's index only stores guide titles (e.g. "Form Bindings"), missing all the paragraphs and code examples inside. For guides and large docs (`doc_type == "guide"` or content > 1,500 chars), the ingestion worker fetches the full HTML page and uses `text_chunker` to split it into overlapping chunks:
+
+```mermaid
+graph TD
+    A["Phoenix LiveView Guide<br/>(e.g. form-bindings.html — 4,500 words)"] --> B["text_chunker<br/>(400 words, 40-word overlap)"]
+    B --> C1["Chunk 1: phx-change & phx-submit"]
+    B --> C2["Chunk 2: inputs_for & nested forms"]
+    B --> C3["Chunk 3: Form recovery & auto-save"]
+    C1 --> D["Mistral Embeddings (1024-dim)"]
+    C2 --> D
+    C3 --> D
+    D --> E["PostgreSQL + HNSW Index"]
+```
+
+Benefits:
+- **Zero information loss** — the entire guide is indexed paragraph by paragraph
+- **Pinpoint precision** — "How do I recover form state on reconnect?" matches the form recovery chunk directly, not a vague guide title
+- **Embedding window fit** — 400-word chunks stay within Mistral's optimal embedding range without truncation
+
+#### Ingestion summary
+
+| Doc type | Source | Processing |
+|---|---|---|
+| Function/macro `@doc` | `search_data.js` items | Direct indexing (1 entry per function) |
+| Module `@moduledoc` | `search_data.js` items | Direct indexing |
+| Guides & READMEs | Full HTML page fetch | `text_chunker` → 400-word overlapping chunks |
+
+Hybrid search combines pgvector cosine distance with PostgreSQL full-text search (`tsvector` GIN index) over module, function, and content fields.
+
 ## Configuration
 
 All settings are in `config/runtime.exs`, read from environment variables:
