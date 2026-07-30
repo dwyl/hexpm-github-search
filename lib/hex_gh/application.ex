@@ -24,6 +24,7 @@ defmodule HexGh.Application do
         {Finch, name: HexGh.Finch, pools: %{"https://api.mistral.ai" => [size: 10]}},
         {Task.Supervisor, name: HexGh.TaskSupervisor},
         HexGh.Memory,
+        {HexGh.Docs.Poller, enabled: Application.get_env(:hex_gh, :docs_poller_enabled, true)},
         {HexGh.MCP.Server, transport: {:streamable_http, start: true}},
         HexGhWeb.Endpoint
       ]

@@ -11,6 +11,7 @@ defmodule HexGh.MCP.Server do
   component(HexGh.MCP.Tools.SearchGithubIssues)
   component(HexGh.MCP.Tools.Remember)
   component(HexGh.MCP.Tools.Recall)
+  component(HexGh.MCP.Tools.SearchDocs)
 
   @impl true
   def init(_client_info, frame) do

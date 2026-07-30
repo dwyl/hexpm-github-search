@@ -8,7 +8,10 @@ config :hex_gh, HexGhWeb.Endpoint,
   server: false
 
 # Use a separate memory DB for tests (wiped before each run)
-config :hex_gh, memory_db_path: "priv/test_memory.db"
+config :hex_gh,
+  memory_db_path: "priv/test_memory.db",
+  mistral_api_key: "test_key",
+  docs_poller_enabled: false
 
 # Test database
 config :hex_gh, HexGh.Repo,

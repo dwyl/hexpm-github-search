@@ -26,7 +26,8 @@ config :hex_gh, HexGhWeb.Endpoint, http: [port: String.to_integer(System.get_env
 config :hex_gh,
   # Mistral AI
   mistral_api_url: System.get_env("MISTRAL_API_URL", "https://api.mistral.ai/v1"),
-  mistral_api_key: System.get_env("MISTRAL_API_KEY"),
+  mistral_api_key:
+    System.get_env("MISTRAL_API_KEY") || Application.get_env(:hex_gh, :mistral_api_key),
   mistral_model_small: System.get_env("MISTRAL_MODEL_SMALL", "mistral-small-latest"),
   mistral_model_large: System.get_env("MISTRAL_MODEL_LARGE", "mistral-medium-latest"),
   mistral_model_embed: System.get_env("MISTRAL_MODEL_EMBED", "mistral-embed"),

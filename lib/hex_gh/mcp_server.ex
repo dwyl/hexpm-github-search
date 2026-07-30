@@ -4,6 +4,8 @@ defmodule HexGh.MCPServer do
   Public tools are also exposed externally via `HexGh.MCPServer.Public`.
   """
 
+  alias HexGh.AI.Mistral
+  alias HexGh.Docs.Search
   alias HexGh.Tools.GitHub
   alias HexGh.Tools.Hex
   alias HexGh.Tools.SaveMemory
@@ -34,6 +36,28 @@ defmodule HexGh.MCPServer do
           type: "object",
           properties: %{
             query: %{type: "string", description: "Search query for packages"}
+          },
+          required: ["query"]
+        }
+      }
+    },
+    "search_docs" => %{
+      type: "function",
+      function: %{
+        name: "search_docs",
+        description: "Search HexDocs, typespecs, and code examples for Elixir packages",
+        parameters: %{
+          type: "object",
+          properties: %{
+            query: %{
+              type: "string",
+              description: "Search query for documentation or code examples"
+            },
+            package: %{type: "string", description: "Optional Hex package name filter"},
+            include_examples_only: %{
+              type: "boolean",
+              description: "Optional filter to only return entries with code snippets"
+            }
           },
           required: ["query"]
         }
@@ -90,6 +114,26 @@ defmodule HexGh.MCPServer do
 
   def call_tool("search_hex_packages", %{"query" => query}) do
     Hex.search_packages(query)
+  end
+
+  def call_tool("search_docs", %{"query" => query} = args) do
+    package = Map.get(args, "package")
+    examples_only = Map.get(args, "include_examples_only", false)
+
+    vector =
+      case Mistral.embed(query) do
+        {:ok, emb} when is_list(emb) -> Pgvector.new(emb)
+        _ -> nil
+      end
+
+    results =
+      Search.search(query,
+        package: package,
+        include_examples_only: examples_only,
+        embedding: vector
+      )
+
+    {:ok, results}
   end
 
   def call_tool("save_memory", %{"fact" => fact} = args) do
