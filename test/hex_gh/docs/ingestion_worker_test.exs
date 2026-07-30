@@ -23,6 +23,16 @@ defmodule HexGh.Docs.IngestionWorkerTest do
       assert %{"items" => [item]} = data
       assert item["name"] == "func/1"
     end
+
+    test "parses sidebarNodes assignment format" do
+      js = """
+      sidebarNodes={"modules":[{"id":"Boruta.Oauth","title":"Boruta.Oauth","nodeGroups":[{"key":"functions","nodes":[{"id":"token/2","anchor":"token/2"}]}]}]};
+      """
+
+      assert {:ok, data} = IngestionWorker.parse_search_data_js(js)
+      assert %{"items" => items} = data
+      assert length(items) >= 2
+    end
   end
 
   describe "extract_code_snippet/1" do

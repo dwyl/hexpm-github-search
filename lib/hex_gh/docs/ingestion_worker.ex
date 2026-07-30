@@ -74,30 +74,54 @@ defmodule HexGh.Docs.IngestionWorker do
   defp resolve_version(_package, version), do: {:ok, version}
 
   defp fetch_search_data(package, version) do
-    primary_url = "https://hexdocs.pm/#{package}/#{version}/search_data.js"
+    primary_urls = [
+      "https://#{package}.hexdocs.pm/#{version}/search_data.js",
+      "https://#{package}.hexdocs.pm/search_data.js",
+      "https://hexdocs.pm/#{package}/#{version}/search_data.js"
+    ]
 
-    case Req.get(primary_url, headers: [{"user-agent", "hex_gh/1.0"}]) do
-      {:ok, %{status: 200, body: body}} when is_binary(body) ->
-        parse_search_data_js(body)
+    case Enum.find_value(primary_urls, &try_fetch_js/1) do
+      {:ok, data} ->
+        {:ok, data}
 
       _ ->
         fetch_search_data_fallback(package, version)
     end
   end
 
-  defp fetch_search_data_fallback(package, version) do
-    index_url = "https://hexdocs.pm/#{package}/#{version}/"
+  defp try_fetch_js(url) do
+    case Req.get(url, headers: [{"user-agent", "hex_gh/1.0"}], redirect: :follow) do
+      {:ok, %{status: 200, body: body}} when is_binary(body) ->
+        case parse_search_data_js(body) do
+          {:ok, data} -> {:ok, data}
+          _ -> nil
+        end
 
-    with {:ok, %{status: 200, body: html}} when is_binary(html) <-
-           Req.get(index_url, headers: [{"user-agent", "hex_gh/1.0"}]),
-         [_, search_file] <- Regex.run(~r/src="([^"]*search_data-[^"]+\.js)"/, html),
-         file_url <- build_full_url(index_url, search_file),
-         {:ok, %{status: 200, body: js_body}} <- Req.get(file_url) do
-      parse_search_data_js(js_body)
-    else
       _ ->
-        {:error, :search_data_not_found}
+        nil
     end
+  end
+
+  defp fetch_search_data_fallback(package, version) do
+    urls = [
+      "https://#{package}.hexdocs.pm/#{version}/",
+      "https://#{package}.hexdocs.pm/api-reference.html",
+      "https://hexdocs.pm/#{package}/#{version}/"
+    ]
+
+    Enum.find_value(urls, {:error, :search_data_not_found}, fn index_url ->
+      with {:ok, %{status: 200, body: html}} when is_binary(html) <-
+             Req.get(index_url, headers: [{"user-agent", "hex_gh/1.0"}], redirect: :follow),
+           [_, search_file] <-
+             Regex.run(~r/src="([^"]*(?:search_data|sidebar_items)-[^"]+\.js)"/, html),
+           file_url <- build_full_url(index_url, search_file),
+           {:ok, %{status: 200, body: js_body}} <- Req.get(file_url, redirect: :follow),
+           {:ok, data} <- parse_search_data_js(js_body) do
+        {:ok, data}
+      else
+        _ -> nil
+      end
+    end)
   end
 
   defp build_full_url(base, relative) do
@@ -109,33 +133,113 @@ defmodule HexGh.Docs.IngestionWorker do
   end
 
   def parse_search_data_js(js_content) do
-    json_str =
-      cond do
-        String.contains?(js_content, "searchData =") ->
+    cond do
+      String.contains?(js_content, "sidebarNodes=") ->
+        parse_sidebar_nodes_js(js_content)
+
+      String.contains?(js_content, "searchData =") ->
+        json_str =
           js_content
           |> String.split("searchData =", parts: 2)
           |> Enum.at(1)
           |> String.trim()
           |> String.trim_trailing(";")
 
-        String.contains?(js_content, "searchNodes =") ->
-          nodes =
-            js_content
-            |> String.split("searchNodes =", parts: 2)
-            |> Enum.at(1)
-            |> String.trim()
-            |> String.trim_trailing(";")
+        decode_json_items(json_str)
 
-          "{\"items\": #{nodes}}"
-
-        true ->
+      String.contains?(js_content, "searchNodes =") ->
+        nodes =
           js_content
-      end
+          |> String.split("searchNodes =", parts: 2)
+          |> Enum.at(1)
+          |> String.trim()
+          |> String.trim_trailing(";")
 
+        decode_json_items("{\"items\": #{nodes}}")
+
+      true ->
+        decode_json_items(js_content)
+    end
+  end
+
+  defp decode_json_items(json_str) do
     case Jason.decode(json_str) do
       {:ok, data} -> {:ok, data}
       {:error, err} -> {:error, {:invalid_json, err}}
     end
+  end
+
+  defp parse_sidebar_nodes_js(js_content) do
+    json_str =
+      js_content
+      |> String.split("sidebarNodes=", parts: 2)
+      |> Enum.at(1)
+      |> String.trim()
+      |> String.trim_trailing(";")
+
+    case Jason.decode(json_str) do
+      {:ok, map} ->
+        items = extract_items_from_sidebar_nodes(map)
+        {:ok, %{"items" => items}}
+
+      {:error, err} ->
+        {:error, {:invalid_json, err}}
+    end
+  end
+
+  defp extract_items_from_sidebar_nodes(map) when is_map(map) do
+    modules = Map.get(map, "modules", [])
+    extras = Map.get(map, "extras", [])
+
+    module_items =
+      Enum.flat_map(modules, fn mod ->
+        mod_id = Map.get(mod, "id", "")
+        mod_title = Map.get(mod, "title", mod_id)
+
+        mod_item = %{
+          "ref" => "#{mod_id}.html",
+          "title" => mod_title,
+          "doc" => mod_title,
+          "type" => "module"
+        }
+
+        node_groups = Map.get(mod, "nodeGroups", [])
+
+        func_items =
+          Enum.flat_map(node_groups, fn group ->
+            key = Map.get(group, "key", "function")
+            nodes = Map.get(group, "nodes", [])
+
+            Enum.map(nodes, fn node ->
+              node_id = Map.get(node, "id", "")
+              anchor = Map.get(node, "anchor", node_id)
+
+              %{
+                "ref" => "#{mod_id}.html##{anchor}",
+                "title" => "#{mod_title}.#{node_id}",
+                "doc" => "#{mod_title}.#{node_id}",
+                "type" => key
+              }
+            end)
+          end)
+
+        [mod_item | func_items]
+      end)
+
+    extra_items =
+      Enum.map(extras, fn extra ->
+        id = Map.get(extra, "id", "")
+        title = Map.get(extra, "title", id)
+
+        %{
+          "ref" => "#{id}.html",
+          "title" => title,
+          "doc" => title,
+          "type" => "guide"
+        }
+      end)
+
+    module_items ++ extra_items
   end
 
   defp build_doc_item(package, version, item) when is_map(item) do
