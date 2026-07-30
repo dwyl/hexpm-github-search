@@ -127,6 +127,7 @@ defmodule HexGh.KnowledgeBase do
     end
   end
 
+  @doc "Pure vector cosine similarity search. Use `search/2` for hybrid (vector + full-text)."
   def search_vector(embedding, opts \\ []) when is_list(embedding) do
     limit = Keyword.get(opts, :limit, 5)
     kind = Keyword.get(opts, :kind)
