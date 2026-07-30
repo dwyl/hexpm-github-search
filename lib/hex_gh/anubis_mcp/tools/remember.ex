@@ -49,26 +49,18 @@ defmodule HexGh.MCP.Tools.Remember do
   end
 
   defp build_embedding_text(structured, content) do
-    stack_list =
-      Map.get(structured.metadata, :stack) || Map.get(structured.metadata, "stack") || []
+    meta = stringify_keys(structured.metadata)
+
+    stack_list = Map.get(meta, "stack", [])
 
     stack_str =
       if is_list(stack_list) and stack_list != [], do: Enum.join(stack_list, ", "), else: "N/A"
 
-    symptom =
-      Map.get(structured.metadata, :symptom) || Map.get(structured.metadata, "symptom") || "N/A"
-
-    fix = Map.get(structured.metadata, :fix) || Map.get(structured.metadata, "fix") || "N/A"
-
-    domain =
-      Map.get(structured.metadata, :domain) || Map.get(structured.metadata, "domain") || "general"
-
-    package =
-      Map.get(structured.metadata, :package) || Map.get(structured.metadata, "package") || "N/A"
-
-    version =
-      Map.get(structured.metadata, :package_version) ||
-        Map.get(structured.metadata, "package_version") || "N/A"
+    symptom = Map.get(meta, "symptom", "N/A")
+    fix = Map.get(meta, "fix", "N/A")
+    domain = Map.get(meta, "domain", "general")
+    package = Map.get(meta, "package", "N/A")
+    version = Map.get(meta, "package_version", "N/A")
 
     """
     [#{structured.kind} | #{domain}] #{structured.title}
@@ -289,4 +281,10 @@ defmodule HexGh.MCP.Tools.Remember do
   end
 
   defp parse_id(_), do: :error
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), v} end)
+  end
+
+  defp stringify_keys(_), do: %{}
 end

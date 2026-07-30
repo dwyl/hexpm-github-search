@@ -99,10 +99,10 @@ defmodule HexGh.AI.Mistral do
 
   defp emit_telemetry(path, req_body, resp_body) do
     usage = Map.get(resp_body, "usage") || %{}
+    req_meta = stringify_keys(req_body)
 
     model =
-      Map.get(resp_body, "model") || Map.get(req_body, :model) || Map.get(req_body, "model") ||
-        "unknown"
+      Map.get(resp_body, "model") || Map.get(req_meta, "model") || "unknown"
 
     measurements = %{
       prompt_tokens: Map.get(usage, "prompt_tokens", 0),
@@ -121,4 +121,10 @@ defmodule HexGh.AI.Mistral do
 
     :telemetry.execute([:hex_gh, :ai, :mistral, :request], measurements, metadata)
   end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), v} end)
+  end
+
+  defp stringify_keys(_), do: %{}
 end
