@@ -34,6 +34,13 @@ defmodule HexGhWeb.Router do
     live "/", ChatLive, :index
   end
 
+  # Prometheus / PromEx Metrics endpoint
+  scope "/" do
+    pipe_through :api
+
+    forward "/metrics", PromEx.Plug, prom_ex_module: HexGh.PromEx
+  end
+
   scope "/webhook", HexGhWeb do
     pipe_through :api
 
