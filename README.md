@@ -146,7 +146,7 @@ The `remember` tool uses a custom deduplication and consolidation pipeline backe
 #### Decision taxonomy
 
 | Action | When | What happens |
-|-----------|-------------------------------------------------------|---------------------------------------|
+| ----------- | ------------------------------------------------------- | --------------------------------------- |
 | **create** | No similar neighbors (similarity < 0.7) | New entry |
 | **discard** | Too similar (> 0.9), no additional value | Do nothing |
 | **append** | Similar neighbor, new info adds value | Concatenate to existing content |
@@ -276,7 +276,7 @@ The `search_docs` tool provides semantic search over Hex package documentation, 
 **ExDoc's `search_data.js` as primary source** — Instead of scraping HTML, the ingestion worker parses ExDoc's pre-built search index. Module names, function signatures, typespecs — all pre-extracted and structured. A fallback chain handles ExDoc version differences:
 
 | ExDoc format | Variable name | Typical version |
-|---|---|---|
+| --- | --- | --- |
 | Modern | `searchData` | ExDoc 0.30+ |
 | Legacy | `searchNodes` | ExDoc 0.28-0.29 |
 | Sidebar | `sidebarNodes` | Older / Erlang projects |
@@ -300,19 +300,136 @@ graph TD
 ```
 
 Benefits:
+
 - **Zero information loss** — the entire guide is indexed paragraph by paragraph
 - **Pinpoint precision** — "How do I recover form state on reconnect?" matches the form recovery chunk directly, not a vague guide title
 - **Embedding window fit** — 400-word chunks stay within Mistral's optimal embedding range without truncation
 
+#### Old vs modern ExDoc hosting
+
+HexDocs hosting has evolved, and the ingestion worker handles both patterns transparently:
+
+| Era | URL pattern | `search_data.js` location | Example |
+| --- | --- | --- | --- |
+| **Classic** | `hexdocs.pm/{pkg}/{vsn}/` | Embedded in every page | `hexdocs.pm/phoenix/1.7.0/` |
+| **Modern** (2024+) | `{pkg}.hexdocs.pm/` | Landing page has **no** JS data | `oban.hexdocs.pm/` |
+
+Modern HexDocs landing pages (`{pkg}.hexdocs.pm/`) are marketing-style pages that don't embed ExDoc's `search_data.js` or `sidebarNodes`. The actual documentation lives at module-level URLs like `oban.hexdocs.pm/Oban.html`. The ingestion worker's fallback chain tries multiple URL patterns including inferred module names (e.g. `oban` → `Oban.html`).
+
+**Why `text_chunker` matters for both formats**: regardless of hosting era, ExDoc's search index only stores short summaries for guides — just titles like "Form Bindings" or "Testing". The actual paragraphs, code examples, and explanations are only in the full HTML pages. `text_chunker` bridges this gap by fetching and splitting the full HTML into 400-word overlapping chunks, ensuring that a query like "how to validate nested form inputs" matches the relevant paragraph — not just a guide title. Without `text_chunker`, guide content would be limited to one-line summaries, making semantic search over tutorials and how-to guides essentially useless.
+
 #### Ingestion summary
 
 | Doc type | Source | Processing |
-|---|---|---|
+| --- | --- | --- |
 | Function/macro `@doc` | `search_data.js` items | Direct indexing (1 entry per function) |
 | Module `@moduledoc` | `search_data.js` items | Direct indexing |
 | Guides & READMEs | Full HTML page fetch | `text_chunker` → 400-word overlapping chunks |
 
 Hybrid search combines pgvector cosine distance with PostgreSQL full-text search (`tsvector` GIN index) over module, function, and content fields.
+
+#### Some examples
+
+```bash
+> search-docs "how to trigger cron jobs with Oban?"
+```
+
+The tool fetches the libary, digests it with semantic guide chunking (`:text_chunker`)  + pgvector embedding pipeline: the semantic vector search pinpoints the exact, relevant text chunks and code snippets across guide parts, while the LLM synthesizes those fragments into a coherent answer with working Elixir code and precise links.
+
+```txt
+
+● hexgh/search_docs(Search docs for Oban cron)
+● hexgh/search_docs(Search docs for Oban cron plugin) (ctrl+o to expand)
+  Based on search_docs results for oban (v2.23.0):
+
+  ### How to Trigger Cron / Periodic Jobs in Oban
+
+  In Oban, periodic/cron jobs are managed using Oban.Plugins.Cron.
+
+  #### 1. Configuration in config/config.exs or application.ex
+
+  You configure the Oban.Plugins.Cron plugin with a :crontab schedule list inside your Oban configuration:
+
+    config :my_app, Oban,
+      repo: MyApp.Repo,
+      queues: [default: 10, mailers: 5],
+      plugins: [
+        {Oban.Plugins.Cron,
+         crontab: [
+           # Run every minute
+           {"* * * * *", MyApp.Workers.HeartbeatWorker},
+           # Run daily at 02:00 UTC with custom args
+           {"0 2 * * *", MyApp.Workers.DailyCleanupWorker, args: %{type: "full"}},
+           # Run at midnight on the first day of every month
+           {"0 0 1 * *", MyApp.Workers.MonthlyReportWorker}
+         ]}
+      ]
+    ──────
+  ### Key Details from Oban Documentation
+
+  1. How It Works:
+      • The Oban.Plugins.Cron plugin checks the crontab schedule and enqueues new job records into the database when execution times are reached.
+      • Jobs are inserted by the leader node in a cluster to prevent duplicate job insertion across multiple application nodes.
+  2. Crontab Syntax:
+      • Standard 5-field cron syntax (minute hour day-of-month month day-of-week).
+      • Supports tuple items: {cron_expression, WorkerModule} or {cron_expression, WorkerModule, args: %{...}, queue: :custom}.
+
+  ──────
+  ### HexDocs References (Retrieved via search_docs)
+
+  • Oban.Plugins.Cron Module https://hexdocs.pm/oban/2.23.0/Oban.Plugins.Cron.html
+  • Periodic Jobs Guide - Part 6 https://hexdocs.pm/oban/2.23.0/periodic_jobs.html#part-6
+  • Testing Oban Config - Part 6 https://hexdocs.pm/oban/2.23.0/testing_config.html#part-6
+```
+
+Another similar example:
+
+```bash
+> search-docs "Explain how to run a background job with Oban backed by SQLite"
+```
+
+It pulls info from two different places with references
+
+```txt
+Based on the indexed oban (v2.23.0) guide chunk Installation - Part 10 https://hexdocs.pm/oban/2.23.0/installation.html#part-10:
+
+  ### How to Run an Oban Background Job Backed by SQLite3
+
+  To run Oban with SQLite3 instead of PostgreSQL, use the Oban.Engines.Lite engine:
+
+  #### 1. Configuration in config/config.exs
+
+  Set :engine to Oban.Engines.Lite and point :repo to your SQLite Ecto repo (e.g. Ecto.Adapters.SQLite3):
+
+    # config/config.exs
+    config :my_app, Oban,
+      engine: Oban.Engines.Lite,
+      repo: MyApp.Repo,
+      queues: [default: 10, background: 5]
+    ──────
+  #### 2. Define a Worker (lib/my_app/workers/sample_worker.ex)
+
+    defmodule MyApp.Workers.SampleWorker do
+      use Oban.Worker, queue: :default
+
+      @impl Oban.Worker
+      def perform(%Oban.Job{args: %{"task_id" => task_id}}) do
+        # Process background task here
+        {:ok, task_id}
+      end
+    end
+    ──────
+  #### 3. Enqueue the Job
+
+    %{task_id: 123}
+    |> MyApp.Workers.SampleWorker.new()
+    |> Oban.insert()
+    ──────
+  ### HexDocs References (Retrieved via search_docs)
+
+  • Oban Installation Guide - Part 10 (SQLite3 Engine Configuration) https://hexdocs.pm/oban/2.23.0/installation.html#part-10
+  • Operational Maintenance - Part 2 https://hexdocs.pm/oban/2.23.0/operational_maintenance.html#part-2
+```
 
 ## Configuration
 

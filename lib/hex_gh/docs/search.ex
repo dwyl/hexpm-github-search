@@ -19,17 +19,28 @@ defmodule HexGh.Docs.Search do
   @spec search(String.t(), keyword()) :: {[PackageDoc.t()], [String.t()]}
   def search(query, opts \\ []) when is_binary(query) do
     package = Keyword.get(opts, :package)
+    version = Keyword.get(opts, :version)
+    refresh = Keyword.get(opts, :refresh, false)
     examples_only = Keyword.get(opts, :include_examples_only, false)
     embedding = Keyword.get(opts, :embedding)
     limit = Keyword.get(opts, :limit, 10)
 
-    notices = ensure_ingested(package, query)
+    {notices, resolved_version} = ensure_ingested(package, version, refresh, query)
 
     base_query = from(d in PackageDoc)
 
     base_query =
       if package && package != "" do
         from(d in base_query, where: d.package == ^package)
+      else
+        base_query
+      end
+
+    version_filter = resolved_version || version
+
+    base_query =
+      if is_binary(version_filter) and version_filter != "" and version_filter != "latest" do
+        from(d in base_query, where: d.version == ^version_filter)
       else
         base_query
       end
@@ -50,7 +61,8 @@ defmodule HexGh.Docs.Search do
       from(d in base_query,
         where:
           fragment("? @@ websearch_to_tsquery('english', ?)", d.search_vector, ^query) or
-            fragment("? <-> ? < 0.8", d.embedding, ^vec),
+            fragment("? @@ plainto_tsquery('english', ?)", d.search_vector, ^query) or
+            not is_nil(d.embedding),
         order_by: [asc: fragment("COALESCE(? <-> ?, 1.0)", d.embedding, ^vec)],
         limit: ^limit
       )
@@ -71,6 +83,17 @@ defmodule HexGh.Docs.Search do
       )
       |> Repo.all()
 
+    results =
+      if results == [] do
+        from(d in base_query,
+          where: fragment("? @@ plainto_tsquery('english', ?)", d.search_vector, ^query),
+          limit: ^limit
+        )
+        |> Repo.all()
+      else
+        results
+      end
+
     {results, []}
   rescue
     e ->
@@ -78,45 +101,73 @@ defmodule HexGh.Docs.Search do
       {[], ["Search query failed: #{Exception.message(e)}"]}
   end
 
-  defp ensure_ingested(package, _query) when is_binary(package) and package != "" do
-    maybe_auto_ingest(package)
+  defp ensure_ingested(package, version, refresh, _query)
+       when is_binary(package) and package != "" do
+    maybe_auto_ingest(package, refresh, version)
   end
 
-  defp ensure_ingested(_package, query) do
-    query
-    |> String.downcase()
-    |> String.split(~r/[^\w-]+/, trim: true)
-    |> Enum.take(3)
-    |> Enum.flat_map(&maybe_auto_ingest/1)
+  defp ensure_ingested(_package, _version, _refresh, query) do
+    notices =
+      query
+      |> String.downcase()
+      |> String.split(~r/[^\w-]+/, trim: true)
+      |> Enum.take(3)
+      |> Enum.flat_map(fn term ->
+        {n, _v} = maybe_auto_ingest(term, false, nil)
+        n
+      end)
+
+    {notices, nil}
   end
 
   @ingest_timeout 15_000
 
-  defp maybe_auto_ingest(package) do
-    if Repo.exists?(from(d in PackageDoc, where: d.package == ^package)) do
-      []
+  defp maybe_auto_ingest(package, refresh, version) do
+    target_version = if is_binary(version) and version != "", do: version, else: "latest"
+
+    already_ingested? =
+      if target_version == "latest" do
+        Repo.exists?(from(d in PackageDoc, where: d.package == ^package))
+      else
+        Repo.exists?(
+          from(d in PackageDoc, where: d.package == ^package and d.version == ^target_version)
+        )
+      end
+
+    if not refresh and already_ingested? do
+      {[], nil}
     else
-      Logger.info("[Docs.Search] auto-ingesting docs for package: #{package}")
+      Logger.info(
+        "[Docs.Search] auto-ingesting docs for package: #{package} version: #{target_version}"
+      )
 
       task =
         Task.Supervisor.async_nolink(HexGh.TaskSupervisor, fn ->
-          IngestionWorker.ingest(package, "latest")
+          IngestionWorker.ingest(package, target_version)
         end)
 
       case Task.yield(task, @ingest_timeout) || Task.shutdown(task) do
+        {:ok, {:ok, count, resolved_version}} ->
+          {["Docs for '#{package}' v#{resolved_version} were just indexed (#{count} docs)."],
+           resolved_version}
+
         {:ok, {:ok, _count}} ->
-          ["Docs for '#{package}' were just indexed."]
+          {["Docs for '#{package}' were just indexed."], nil}
+
+        {:ok, {:error, {:no_docs, ver}}} ->
+          {["No docs published for '#{package}' v#{ver} and could not detect a served version."],
+           nil}
 
         {:ok, {:error, reason}} ->
-          ["Ingestion failed for '#{package}': #{inspect(reason)}"]
+          {["Ingestion failed for '#{package}': #{inspect(reason)}"], nil}
 
         nil ->
-          ["Docs for '#{package}' still ingesting (large package) — try again shortly."]
+          {["Docs for '#{package}' still ingesting (large package) — try again shortly."], nil}
       end
     end
   rescue
     e ->
       Logger.warning("[Docs.Search] auto-ingest failed for #{package}: #{Exception.message(e)}")
-      ["Auto-ingest failed for '#{package}': #{Exception.message(e)}"]
+      {["Auto-ingest failed for '#{package}': #{Exception.message(e)}"], nil}
   end
 end

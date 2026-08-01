@@ -16,13 +16,13 @@ defmodule HexGh.MCP.Tools.SearchDocsTest do
 
   describe "MCPServer integration" do
     test "call_tool search_docs is registered and dispatches successfully" do
-      assert {:ok, results} =
+      assert {:ok, {results, _notices}} =
                MCPServer.call_tool("search_docs", %{
                  "query" => "phoenix router",
                  "include_examples_only" => false
                })
 
-      assert match?(list when is_list(list), results)
+      assert is_list(results)
     end
   end
 end

@@ -41,16 +41,14 @@ defmodule HexGh.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:logger_backends, "~> 1.0.0"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.19"},
       {:pgvector, "~> 0.3"},
       {:boruta, "~> 3.0.0-beta.4"},
       {:argon2_elixir, "~> 4.1"},
       {:exqlite, "~> 0.39.0"},
-      {:anubis_mcp,
-       git: "https://github.com/jfim/anubis-mcp.git",
-       branch: "non-upstreamed-fixes",
-       override: true},
+      {:anubis_mcp, "~> 1.14"},
       {:ex_mcp, "~> 0.12.0"},
       {:telegex, "~> 1.8"},
       {:multipart, "~> 0.4"},

@@ -1,31 +1,19 @@
-defmodule HexGh.Docs.IngestionWorker do
-  @moduledoc """
-  Ingests documentation and code examples from HexDocs for Elixir packages.
-  Parses ExDoc search_data index, extracts module/function docs, extracts code blocks,
-  generates embeddings via `HexGh.AI.Mistral`, and stores them in `package_docs`.
-  """
-
+defmodule StdioMcp.Docs.IngestionWorker do
+  @moduledoc "Ported HexDocs worker supporting sidebarNodes, search_data, and TextChunker for SQLite."
   import Ecto.Query
+  alias StdioMcp.{PackageDoc, Repo}
+  alias StdioMcp.AI.Mistral
   require Logger
 
-  alias HexGh.AI.Mistral
-  alias HexGh.PackageDoc
-  alias HexGh.Repo
-
-  @doc """
-  Ingests docs for a given package and version.
-  Defaults to "latest" which looks up the latest release from hex.pm.
-  """
-  @spec ingest(String.t(), String.t()) :: {:ok, integer()} | {:error, term()}
   def ingest(package, version \\ "latest") when is_binary(package) do
     key = {__MODULE__, package}
 
-    case Registry.register(HexGh.IngestionRegistry, key, :running) do
+    case Registry.register(StdioMcp.IngestionRegistry, key, :running) do
       {:ok, _} ->
         try do
           do_ingest(package, version)
         after
-          Registry.unregister(HexGh.IngestionRegistry, key)
+          Registry.unregister(StdioMcp.IngestionRegistry, key)
         end
 
       {:error, {:already_registered, _}} ->
@@ -77,11 +65,14 @@ defmodule HexGh.Docs.IngestionWorker do
       |> Enum.reject(&is_nil/1)
 
     docs_with_embeddings = attach_embeddings_batch(docs)
+    save_docs(docs_with_embeddings, canonical, version)
 
-    case save_docs(docs_with_embeddings, canonical, version) do
-      {:ok, count} -> {:ok, count, version}
-      error -> error
-    end
+    # Clear per-page HTML cache from process dictionary
+    Process.get_keys()
+    |> Enum.filter(&match?({:html_cache, _}, &1))
+    |> Enum.each(&Process.delete/1)
+
+    {:ok, length(docs), version}
   end
 
   @doc """
@@ -91,7 +82,7 @@ defmodule HexGh.Docs.IngestionWorker do
   def detect_served_version(docs_url) do
     url = String.trim_trailing(docs_url, "/")
 
-    case Req.get(url, headers: [{"user-agent", "hex_gh/1.0"}], redirect: :follow) do
+    case Req.get(url, headers: [{"user-agent", "stdio_mcp/1.0"}], redirect: :follow) do
       {:ok, %{status: 200, body: html}} when is_binary(html) ->
         case Regex.run(~r/<title>[^<]*\bv([\d]+\.[\d]+\.[\d]+[^<]*?)\s*[—–-]/, html) do
           [_, version] -> {:ok, String.trim(version)}
@@ -103,110 +94,28 @@ defmodule HexGh.Docs.IngestionWorker do
     end
   end
 
-  defp attach_embeddings_batch(docs) do
-    docs
-    |> Enum.chunk_every(50)
-    |> Enum.flat_map(&embed_batch/1)
-  end
-
-  defp embed_batch(batch, attempts \\ 1) do
-    texts = Enum.map(batch, &doc_to_embed_text/1)
-
-    case Mistral.embed_batch(texts) do
-      {:ok, vectors} when is_list(vectors) and length(vectors) == length(batch) ->
-        Enum.zip_with(batch, vectors, fn doc, vec ->
-          Map.put(doc, :embedding, Pgvector.new(vec))
-        end)
-
-      {:error, {429, _}} when attempts <= 3 ->
-        Logger.warning(
-          "[IngestionWorker] Mistral 429 rate limit hit, backing off #{attempts}s before retry..."
-        )
-
-        Process.sleep(attempts * 1000)
-        embed_batch(batch, attempts + 1)
-
-      err ->
-        Logger.error("[IngestionWorker] Mistral.embed_batch error: #{inspect(err)}")
-        Enum.map(batch, &Map.put(&1, :embedding, nil))
-    end
-  end
-
-  defp doc_to_embed_text(doc) do
-    text = String.trim("#{doc.signature || ""}\n#{doc.content || ""}")
-    text = if text == "", do: doc.title || "doc", else: text
-    String.slice(text, 0, 4000)
-  end
-
-  defp save_docs(docs_with_embeddings, package, version) do
-    Repo.transaction(fn ->
-      from(d in PackageDoc, where: d.package == ^package and d.version == ^version)
-      |> Repo.delete_all()
-
-      now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
-
-      entries =
-        Enum.map(docs_with_embeddings, fn doc ->
-          doc
-          |> Map.put(:inserted_at, now)
-          |> Map.put(:updated_at, now)
-        end)
-
-      if entries != [] do
-        {count, _} = Repo.insert_all(PackageDoc, entries)
-        count
-      else
-        0
-      end
-    end)
-  end
-
   defp resolve_package(package, "latest") do
     url = "https://hex.pm/api/packages/#{package}"
 
-    case Req.get(url, headers: [{"user-agent", "hex_gh/1.0"}]) do
+    case Req.get(url, headers: [{"user-agent", "stdio_mcp/1.0"}]) do
       {:ok, %{status: 200, body: body}} ->
         ver = get_in(body, ["releases", Access.at(0), "version"]) || "latest"
         docs_url = get_in(body, ["meta", "links", "Docs"]) || get_in(body, ["docs_html_url"])
         {:ok, package, ver, docs_url}
 
-      {:ok, %{status: 404}} ->
-        fallback_resolve_package(package)
-
-      error ->
-        Logger.error("Failed to resolve package #{package}: #{inspect(error)}")
-        {:error, :version_resolution_failed}
+      _ ->
+        {:ok, package, "latest", nil}
     end
   end
 
   defp resolve_package(package, version), do: {:ok, package, version, nil}
-
-  defp fallback_resolve_package(package) do
-    search_url = "https://hex.pm/api/packages?search=#{URI.encode(package)}"
-
-    case Req.get(search_url, headers: [{"user-agent", "hex_gh/1.0"}]) do
-      {:ok,
-       %{
-         status: 200,
-         body: [%{"name" => canonical, "releases" => [%{"version" => ver} | _]} = body | _]
-       }} ->
-        docs_url = get_in(body, ["meta", "links", "Docs"]) || get_in(body, ["docs_html_url"])
-        Logger.info("[IngestionWorker] resolved fuzzy '#{package}' → canonical '#{canonical}'")
-        {:ok, canonical, ver, docs_url}
-
-      _ ->
-        {:error, :package_not_found}
-    end
-  end
 
   defp fetch_search_data(package, version) do
     pkg_dashed = String.replace(package, "_", "-")
 
     primary_urls = [
       "https://#{pkg_dashed}.hexdocs.pm/#{version}/search_data.js",
-      "https://#{pkg_dashed}.hexdocs.pm/search_data.js",
       "https://#{package}.hexdocs.pm/#{version}/search_data.js",
-      "https://#{package}.hexdocs.pm/search_data.js",
       "https://hexdocs.pm/#{package}/#{version}/search_data.js"
     ]
 
@@ -220,7 +129,7 @@ defmodule HexGh.Docs.IngestionWorker do
   end
 
   defp try_fetch_js(url) do
-    case Req.get(url, headers: [{"user-agent", "hex_gh/1.0"}], redirect: :follow) do
+    case Req.get(url, headers: [{"user-agent", "stdio_mcp/1.0"}], redirect: :follow) do
       {:ok, %{status: 200, body: body}} when is_binary(body) ->
         case parse_search_data_js(body) do
           {:ok, data} -> {:ok, data}
@@ -234,7 +143,6 @@ defmodule HexGh.Docs.IngestionWorker do
 
   defp fetch_search_data_fallback(package, version) do
     pkg_dashed = String.replace(package, "_", "-")
-
     mod_name = package |> String.split("_") |> Enum.map_join(&String.capitalize/1)
 
     urls = [
@@ -250,7 +158,7 @@ defmodule HexGh.Docs.IngestionWorker do
 
     Enum.find_value(urls, {:error, :search_data_not_found}, fn index_url ->
       with {:ok, %{status: 200, body: html}} when is_binary(html) <-
-             Req.get(index_url, headers: [{"user-agent", "hex_gh/1.0"}], redirect: :follow),
+             Req.get(index_url, headers: [{"user-agent", "stdio_mcp/1.0"}], redirect: :follow),
            [_, search_file] <-
              Regex.run(~r/src="([^"]*(?:search_data|sidebar_items)-[^"]+\.js)"/, html),
            file_url <- build_full_url(index_url, search_file),
@@ -386,36 +294,21 @@ defmodule HexGh.Docs.IngestionWorker do
     end)
   end
 
-  @doc """
-  Builds a single doc item map from search_data item (returns first chunk if item is chunked).
-  """
-  @spec build_doc_item(String.t(), String.t(), map()) :: map() | nil
-  def build_doc_item(package, version, item) do
-    case build_doc_items(package, version, item) do
-      [first | _] -> first
-      _ -> nil
-    end
+  defp build_base_url(nil, package, version) do
+    "https://hexdocs.pm/#{package}/#{version}"
   end
 
-  defp build_base_url(nil, package, version),
-    do: "https://hexdocs.pm/#{package}/#{version}"
+  defp build_base_url(docs_url, _package, _version) do
+    String.trim_trailing(docs_url, "/")
+  end
 
-  defp build_base_url(docs_url, _package, _version),
-    do: String.trim_trailing(docs_url, "/")
-
-  @doc """
-  Builds a list of doc item maps from search_data item.
-  Splits guides and long text into sub-items using `TextChunker`.
-  """
-  @spec build_doc_items(String.t(), String.t(), map()) :: [map()]
   def build_doc_items(package, version, item) when is_map(item) do
     build_doc_items(package, version, "https://hexdocs.pm/#{package}/#{version}", item)
   end
 
   def build_doc_items(_package, _version, _item), do: []
 
-  @spec build_doc_items(String.t(), String.t(), String.t(), map()) :: [map()]
-  def build_doc_items(package, version, base_url, item) when is_map(item) do
+  def build_doc_items(_package, _version, base_url, item) when is_map(item) do
     ref = Map.get(item, "ref", "")
     title = Map.get(item, "title", Map.get(item, "name", ""))
     doc_text = Map.get(item, "doc", Map.get(item, "doc_html", ""))
@@ -423,43 +316,34 @@ defmodule HexGh.Docs.IngestionWorker do
     hexdocs_url = "#{base_url}/#{ref}"
 
     content =
-      if type == "guide" and (doc_text == "" or String.length(doc_text) < 100) do
-        fetched = fetch_guide_content(hexdocs_url)
-        if fetched != "", do: fetched, else: doc_text
-      else
-        doc_text
+      cond do
+        # Already has real content (from searchData/searchNodes format)
+        doc_text != "" and doc_text != title and String.length(doc_text) > String.length(title) ->
+          doc_text
+
+        # Thin content — fetch from the actual HexDocs page
+        true ->
+          fetched = fetch_doc_content(hexdocs_url)
+          if fetched != "", do: fetched, else: doc_text
       end
 
     if content != "" || title != "" do
-      {module, function} = parse_title_and_module(title, ref)
+      chunks = chunk_content(content)
 
-      if type == "guide" or String.length(content) > 1500 do
-        chunk_content(content, %{
-          package: package,
-          version: version,
+      Enum.with_index(chunks, fn chunk, idx ->
+        suffix = if length(chunks) > 1, do: " - Part #{idx + 1}", else: ""
+
+        %{
           doc_type: type,
-          module: module,
-          function: function,
-          base_signature: title,
-          base_url: hexdocs_url
-        })
-      else
-        code_snippet = extract_code_snippet(content)
-
-        [
-          %{
-            package: package,
-            version: version,
-            doc_type: type,
-            module: module,
-            function: function,
-            signature: title,
-            content: content,
-            code_snippet: code_snippet,
-            hexdocs_url: hexdocs_url
-          }
-        ]
-      end
+          module: extract_module(ref, title),
+          function: extract_function(title, type),
+          signature: "#{title}#{suffix}",
+          content: chunk,
+          code_snippet: extract_first_code_snippet(chunk),
+          hexdocs_url: hexdocs_url,
+          embedding: nil
+        }
+      end)
     else
       []
     end
@@ -467,27 +351,73 @@ defmodule HexGh.Docs.IngestionWorker do
 
   def build_doc_items(_package, _version, _base_url, _item), do: []
 
-  @doc """
-  Fetches HTML content for a guide page from HexDocs and extracts plain text / markdown content.
-  """
-  @spec fetch_guide_content(String.t()) :: String.t()
-  def fetch_guide_content(url) when is_binary(url) do
-    case Req.get(url, headers: [{"user-agent", "hex_gh/1.0"}], redirect: :follow) do
-      {:ok, %{status: 200, body: html}} when is_binary(html) ->
-        extract_text_from_html(html)
-
-      _ ->
-        ""
+  defp chunk_content(text) do
+    case TextChunker.split(text, format: :markdown, target_chunk_size: 400) do
+      {:error, _} -> [text]
+      chunks when is_list(chunks) -> Enum.map(chunks, & &1.text)
     end
   end
 
-  def fetch_guide_content(_), do: ""
+  defp fetch_doc_content(url) do
+    {page_url, anchor} = split_url_anchor(url)
+    html = cached_fetch_page(page_url)
 
-  @doc """
-  Strips HTML tags and converts HTML guide pages to plain text.
-  """
-  @spec extract_text_from_html(String.t()) :: String.t()
-  def extract_text_from_html(html) when is_binary(html) do
+    if html != "" do
+      full_text = extract_text_from_html(html)
+
+      if anchor != nil do
+        case extract_section_by_anchor(html, anchor) do
+          section when section != "" -> section
+          _ -> full_text
+        end
+      else
+        full_text
+      end
+    else
+      ""
+    end
+  end
+
+  defp split_url_anchor(url) do
+    case String.split(url, "#", parts: 2) do
+      [page, anchor] -> {page, anchor}
+      [page] -> {page, nil}
+    end
+  end
+
+  defp cached_fetch_page(page_url) do
+    cache_key = {:html_cache, page_url}
+
+    case Process.get(cache_key) do
+      nil ->
+        html =
+          case Req.get(page_url,
+                 headers: [{"user-agent", "stdio_mcp/1.0"}],
+                 redirect: :follow
+               ) do
+            {:ok, %{status: 200, body: body}} when is_binary(body) -> body
+            _ -> ""
+          end
+
+        Process.put(cache_key, html)
+        html
+
+      cached ->
+        cached
+    end
+  end
+
+  defp extract_section_by_anchor(html, anchor) do
+    # Match <section id="anchor">...</section>
+    pattern = ~r/<section[^>]*id="#{Regex.escape(anchor)}"[^>]*>(.*?)<\/section>/si
+
+    case Regex.run(pattern, html) do
+      [_, section_html] -> extract_text_from_html_fragment(section_html)
+      _ -> ""
+    end
+  end
+
+  defp extract_text_from_html(html) do
     content_html =
       case Regex.run(
              ~r/<(?:div|main)[^>]*id=["'](?:content|main)["'][^>]*>(.*)<\/(?:div|main)>/s,
@@ -497,7 +427,11 @@ defmodule HexGh.Docs.IngestionWorker do
         _ -> html
       end
 
-    content_html
+    extract_text_from_html_fragment(content_html)
+  end
+
+  defp extract_text_from_html_fragment(html) do
+    html
     |> String.replace(~r/<script.*?>.*?<\/script>/is, "")
     |> String.replace(~r/<style.*?>.*?<\/style>/is, "")
     |> String.replace(~r/<(p|h[1-6]|li|br|div|tr|section|article)[^>]*>/i, "\n")
@@ -507,9 +441,7 @@ defmodule HexGh.Docs.IngestionWorker do
     |> String.trim()
   end
 
-  def extract_text_from_html(_), do: ""
-
-  defp decode_html_entities(text) when is_binary(text) do
+  defp decode_html_entities(text) do
     text
     |> String.replace("&lt;", "<")
     |> String.replace("&gt;", ">")
@@ -519,94 +451,92 @@ defmodule HexGh.Docs.IngestionWorker do
     |> String.replace("&nbsp;", " ")
   end
 
-  defp chunk_content(content, %{
-         package: package,
-         version: version,
-         doc_type: type,
-         module: module,
-         function: function,
-         base_signature: title,
-         base_url: base_url
-       }) do
-    chunks =
-      case TextChunker.split(content, chunk_size: 400, chunk_overlap: 40) do
-        list when is_list(list) -> list
-        _ -> [content]
-      end
-
-    total_chunks = length(chunks)
-
-    chunks
-    |> Enum.with_index(1)
-    |> Enum.map(fn {chunk, idx} ->
-      chunk_text =
-        case chunk do
-          %TextChunker.Chunk{text: t} -> t
-          t when is_binary(t) -> t
-          _ -> to_string(chunk)
-        end
-
-      {sig_suffix, url_anchor} =
-        if total_chunks > 1 do
-          {" - Part #{idx}", "#part-#{idx}"}
-        else
-          {"", ""}
-        end
-
-      signature = "#{title}#{sig_suffix}"
-      hexdocs_url = "#{base_url}#{url_anchor}"
-      code_snippet = extract_code_snippet(chunk_text)
-
-      %{
-        package: package,
-        version: version,
-        doc_type: type,
-        module: module,
-        function: function,
-        signature: signature,
-        content: chunk_text,
-        code_snippet: code_snippet,
-        hexdocs_url: hexdocs_url
-      }
-    end)
-  end
-
-  defp parse_title_and_module(title, ref) do
-    cond do
-      String.contains?(title, "/") ->
-        case String.split(title, "/") do
-          [mod, func] -> {mod, func}
-          _ -> {parse_module_from_ref(ref), title}
-        end
-
-      String.contains?(ref, ".html#") ->
-        case String.split(ref, ".html#") do
-          [mod_file, func_id] ->
-            mod = mod_file |> String.replace(".html", "")
-            {mod, func_id}
-
-          _ ->
-            {parse_module_from_ref(ref), title}
-        end
-
-      true ->
-        {parse_module_from_ref(ref), nil}
-    end
-  end
-
-  defp parse_module_from_ref(ref) do
+  defp extract_module(ref, _title) do
     ref
     |> String.split("#")
     |> List.first()
-    |> String.replace(".html", "")
+    |> String.replace(~r/\.html$/, "")
   end
 
-  def extract_code_snippet(content) when is_binary(content) do
-    case Regex.scan(~r/```(?:elixir)?\n(.*?)```/s, content) do
-      [[_, snippet] | _] -> String.trim(snippet)
+  defp extract_function(title, type) when type in ["function", "macro"] do
+    if String.contains?(title, "/") do
+      title
+    else
+      nil
+    end
+  end
+
+  defp extract_function(_title, _type), do: nil
+
+  defp extract_first_code_snippet(text) do
+    case Regex.run(~r/```(?:elixir)?\n(.*?)```/s, text) do
+      [_, code] -> String.trim(code)
       _ -> nil
     end
   end
 
-  def extract_code_snippet(_), do: nil
+  defp attach_embeddings_batch(docs) do
+    docs
+    |> Enum.chunk_every(50)
+    |> Enum.flat_map(&embed_batch/1)
+  end
+
+  defp embed_batch(batch, attempts \\ 1) do
+    texts = Enum.map(batch, &doc_to_embed_text/1)
+
+    case Mistral.embed_batch(texts) do
+      {:ok, vectors} when is_list(vectors) and length(vectors) == length(batch) ->
+        Enum.zip_with(batch, vectors, fn doc, vec ->
+          Map.put(doc, :embedding, vec)
+        end)
+
+      {:error, {429, _}} when attempts <= 3 ->
+        Logger.warning("[IngestionWorker] Mistral rate limit 429, backing off #{attempts}s...")
+        Process.sleep(attempts * 1000)
+        embed_batch(batch, attempts + 1)
+
+      err ->
+        Logger.error("[IngestionWorker] Mistral.embed_batch error: #{inspect(err)}")
+        Enum.map(batch, &Map.put(&1, :embedding, nil))
+    end
+  end
+
+  defp doc_to_embed_text(doc) do
+    text = String.trim("#{doc.signature || ""}\n#{doc.content || ""}")
+    if text == "", do: doc.module || "doc", else: text
+  end
+
+  defp save_docs(docs, package, version) do
+    Repo.transaction(fn ->
+      Repo.delete_all(
+        from(d in PackageDoc, where: d.package == ^package and d.version == ^version)
+      )
+
+      now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+
+      entries =
+        Enum.map(docs, fn doc ->
+          %{
+            package: package,
+            version: version,
+            doc_type: to_string(doc.doc_type),
+            module: doc.module,
+            function: doc.function,
+            signature: doc.signature,
+            content: doc.content,
+            code_snippet: doc.code_snippet,
+            hexdocs_url: doc.hexdocs_url,
+            embedding: if(doc.embedding, do: Jason.encode!(doc.embedding), else: nil),
+            inserted_at: now,
+            updated_at: now
+          }
+        end)
+
+      entries
+      |> Enum.chunk_every(100)
+      |> Enum.each(&Repo.insert_all(PackageDoc, &1))
+    end)
+
+    {:ok, length(docs)}
+  end
 end

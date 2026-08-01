@@ -17,6 +17,10 @@ defmodule HexGh.MCP.Tools.SearchDocs do
       description: "Optional Hex package name filter (e.g., 'phoenix', 'ecto', 'req')"
     )
 
+    field(:version, :string,
+      description: "Set to 'latest' to force re-ingestion of fresh docs. Omit to use cached docs."
+    )
+
     field(:include_examples_only, :boolean,
       description: "Optional boolean to filter results to only entries containing code snippets"
     )
@@ -25,6 +29,7 @@ defmodule HexGh.MCP.Tools.SearchDocs do
   @impl true
   def execute(%{query: query} = params, frame) do
     package = Map.get(params, :package)
+    version = Map.get(params, :version)
     examples_only = Map.get(params, :include_examples_only, false)
 
     vector =
@@ -35,6 +40,8 @@ defmodule HexGh.MCP.Tools.SearchDocs do
 
     opts = [
       package: package,
+      version: version,
+      refresh: version == "latest",
       include_examples_only: examples_only,
       embedding: vector,
       limit: 10

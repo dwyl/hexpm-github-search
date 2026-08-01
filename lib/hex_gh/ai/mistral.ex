@@ -28,7 +28,7 @@ defmodule HexGh.AI.Mistral do
   end
 
   defp api_key do
-    Application.get_env(:hex_gh, :mistral_api_key) ||
+    System.get_env("MISTRAL_API_KEY") || Application.get_env(:hex_gh, :mistral_api_key) ||
       raise "MISTRAL_API_KEY not configured"
   end
 

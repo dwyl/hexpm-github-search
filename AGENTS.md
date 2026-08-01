@@ -18,7 +18,7 @@ This is a web application written using the Phoenix web framework.
   3. **Library Version Quirks**: Call `remember` if the fix involved an undocumented behavior or version constraint in a dependency.
 
 - **`search_docs` Triggers (Execute BEFORE grepping/answering)**:
-  1. **On Library/Package Usage Questions**: When asked "how to use X", "how to configure X", "how does X work", or for code examples of any dependency (e.g., Postgrex, Ecto, Req, Boruta, Pgvector, Phoenix, Hammer), **ALWAYS call `search_docs` first** to inspect official HexDocs guides, typespecs, and code examples before relying on local code search.
+  1. **On Library/Package Usage Questions**: When asked "how to use X", "how to configure X", "how does X work", or for code examples of any dependency (e.g., Postgrex, Ecto, Req, Boruta, Pgvector, Phoenix, Hammer), **prefer `search_docs` first** to inspect official HexDocs guides, typespecs, and code examples. **ALWAYS extract the target package name(s)** mentioned in the prompt (e.g. `package: "boruta"`, `package: "anubis_mcp"`, `package: "phoenix"`, `package: "plug"`) and pass it explicitly in the `package` argument of `search_docs`. Passing `package` triggers Hex.pm auto-ingestion into SQLite if the package is not yet indexed. **ALWAYS include the exact package version(s)** returned in the search results when citing documentation (e.g. `anubis_mcp v1.14.0`, `boruta v3.0.0-beta.4`).
 
 ### Phoenix v1.8 guidelines
 

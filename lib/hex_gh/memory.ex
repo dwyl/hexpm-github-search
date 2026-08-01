@@ -17,6 +17,7 @@ defmodule HexGh.Memory do
   """
   use GenServer
 
+
   alias Exqlite.Basic
 
   defp vec_dimensions, do: Application.get_env(:hex_gh, :mistral_embed_dimensions, 1024)

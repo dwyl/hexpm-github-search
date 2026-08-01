@@ -14,31 +14,52 @@ defmodule HexGh.Application do
     attach_mcp_telemetry()
     configure_boruta()
 
+    transport = mcp_transport()
+
     children =
-      [
-        HexGh.PromEx,
-        HexGh.Repo,
-        HexGhWeb.Telemetry,
-        {DNSCluster, query: Application.get_env(:hex_gh, :dns_cluster_query) || :ignore},
-        {Phoenix.PubSub, name: HexGh.PubSub},
-        {Finch, name: HexGh.Finch, pools: %{"https://api.mistral.ai" => [size: 10]}},
-        {Registry, keys: :unique, name: HexGh.IngestionRegistry},
-        {Task.Supervisor, name: HexGh.TaskSupervisor},
-        HexGh.Memory,
-        {HexGh.Docs.Poller, enabled: Application.get_env(:hex_gh, :docs_poller_enabled, true)},
-        {HexGh.MCP.Server, transport: {:streamable_http, start: true}},
-        HexGhWeb.Endpoint
-      ]
+      if transport == :stdio do
+        [
+          HexGh.Repo,
+          {Phoenix.PubSub, name: HexGh.PubSub},
+          {Finch, name: HexGh.Finch, pools: %{"https://api.mistral.ai" => [size: 10]}},
+          {Registry, keys: :unique, name: HexGh.IngestionRegistry},
+          {Task.Supervisor, name: HexGh.TaskSupervisor},
+          HexGh.Memory
+        ]
+      else
+        [
+          HexGh.PromEx,
+          HexGh.Repo,
+          HexGhWeb.Telemetry,
+          {DNSCluster, query: Application.get_env(:hex_gh, :dns_cluster_query) || :ignore},
+          {Phoenix.PubSub, name: HexGh.PubSub},
+          {Finch, name: HexGh.Finch, pools: %{"https://api.mistral.ai" => [size: 10]}},
+          {Registry, keys: :unique, name: HexGh.IngestionRegistry},
+          {Task.Supervisor, name: HexGh.TaskSupervisor},
+          HexGh.Memory,
+          {HexGh.Docs.Poller, enabled: Application.get_env(:hex_gh, :docs_poller_enabled, true)},
+          {HexGh.MCP.Server, transport: transport},
+          HexGhWeb.Endpoint
+        ]
+      end
 
     opts = [strategy: :one_for_one, name: HexGh.Supervisor]
     result = Supervisor.start_link(children, opts)
 
-    # Register Telegram webhook after supervision tree is up (Finch must be running)
-    if webhook_url = Application.get_env(:hex_gh, :telegram_webhook_url) do
-      HexGh.Telegram.register_webhook(webhook_url)
+    if transport != :stdio do
+      if webhook_url = Application.get_env(:hex_gh, :telegram_webhook_url) do
+        HexGh.Telegram.register_webhook(webhook_url)
+      end
     end
 
     result
+  end
+
+  defp mcp_transport do
+    case System.get_env("MCP_TRANSPORT") do
+      "stdio" -> :stdio
+      _ -> Application.get_env(:hex_gh, :mcp_transport, {:streamable_http, start: true})
+    end
   end
 
   defp configure_boruta do

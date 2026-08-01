@@ -75,7 +75,8 @@ defmodule HexGh.MCP.Tools.Remember do
     )
   end
 
-  defp process(text) do
+  @doc false
+  def process(text) do
     with {:ok, embedding} <- Mistral.embed(text),
          neighbors <- KnowledgeBase.search(embedding, limit: 3),
          {:ok, decision} <- decide(text, neighbors),
