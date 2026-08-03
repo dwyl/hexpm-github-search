@@ -43,9 +43,37 @@ defmodule HexGh.AI.Mistral do
     body =
       %{model: model, messages: messages}
       |> maybe_add_tools(tools, opts)
+      |> maybe_add_json_mode(opts)
 
     post("/chat/completions", body)
     |> handle_chat_response()
+  end
+
+  # Both knowledge-base prompts ask for JSON and previously relied on stripping
+  # markdown fences from prose, which let the model return a differently shaped
+  # payload without failing.
+  #
+  # Supports generic JSON object mode (json: true) and strict JSON-schema mode
+  # (json_schema: schema, schema_name: name). The schema is the authority on the
+  # response shape, so it is not restated in the prompt.
+  defp maybe_add_json_mode(body, opts) do
+    cond do
+      schema = Keyword.get(opts, :json_schema) ->
+        Map.put(body, :response_format, %{
+          type: "json_schema",
+          json_schema: %{
+            name: Keyword.get(opts, :schema_name, "response_schema"),
+            strict: Keyword.get(opts, :strict, true),
+            schema: schema
+          }
+        })
+
+      Keyword.get(opts, :json, false) ->
+        Map.put(body, :response_format, %{type: "json_object"})
+
+      true ->
+        body
+    end
   end
 
   @spec embed(binary()) ::

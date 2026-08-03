@@ -4,11 +4,28 @@ defmodule HexGh.MCP.Tools.Remember do
   use Anubis.Server.Component, type: :tool
   alias Anubis.Server.Response
   alias HexGh.AI.Mistral
+  alias HexGh.Knowledge.Schemas
+  alias HexGh.Knowledge.Vocabulary
   alias HexGh.KnowledgeBase
 
   require Logger
 
+  # Below this, neighbours are not close enough to be worth a curator call.
   @similarity_threshold 0.7
+  # Above this, a submission adding no new facts is a duplicate.
+  @duplicate_threshold 0.9
+
+  # How many neighbours to retrieve as curation candidates. The decision target
+  # has consistently been the nearest one; the second is carried only so the
+  # curator can see when a submission spans two entries and should be merged.
+  # Anything beyond that has never changed an outcome and is pure prompt cost.
+  @neighbor_limit 2
+
+  # Only the nearest neighbour is rendered in full. The discard rule turns on
+  # whether the submission "contains no fact absent from the neighbour", which
+  # cannot be judged from an excerpt — so the likely target keeps its complete
+  # text, while the runner-up is summarised.
+  @excerpt_chars 400
 
   schema do
     field(:text, {:required, :string},
@@ -24,13 +41,34 @@ defmodule HexGh.MCP.Tools.Remember do
 
   @impl true
   def execute(%{text: text}, frame) do
-    Task.Supervisor.start_child(HexGh.TaskSupervisor, fn ->
-      process(text)
-    end)
+    request_id = generate_request_id()
 
-    {:reply,
-     Response.tool() |> Response.text(Jason.encode!(%{accepted: true, status: "processing"})),
-     frame}
+    reply =
+      case KnowledgeBase.open_decision(request_id, text) do
+        {:ok, _} ->
+          Task.Supervisor.start_child(HexGh.TaskSupervisor, fn ->
+            process(text, request_id)
+          end)
+
+          %{
+            accepted: true,
+            status: "processing",
+            request_id: request_id,
+            note:
+              "Curation runs asynchronously and may discard, append, merge, replace or deprecate. " <>
+                "Look up this request_id to see what was actually done."
+          }
+
+        {:error, reason} ->
+          Logger.error("Knowledge base could not open decision record: #{inspect(reason)}")
+          %{accepted: false, status: "failed", detail: "could not record request"}
+      end
+
+    {:reply, Response.tool() |> Response.text(Jason.encode!(reply)), frame}
+  end
+
+  defp generate_request_id do
+    16 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
   end
 
   defp log_decision(%{action: "discard"}, neighbors) do
@@ -76,31 +114,95 @@ defmodule HexGh.MCP.Tools.Remember do
   end
 
   @doc false
-  def process(text) do
+  def process(text, request_id \\ nil) do
     with {:ok, embedding} <- Mistral.embed(text),
-         neighbors <- KnowledgeBase.search(embedding, limit: 3),
+         neighbors <- KnowledgeBase.search(embedding, limit: @neighbor_limit),
          {:ok, decision} <- decide(text, neighbors),
          :ok <- log_decision(decision, neighbors),
          {:ok, result} <- apply_decision(decision) do
-      Logger.info("Knowledge base: #{result}")
+      Logger.info("Knowledge base: #{result.detail}")
+      record_outcome(request_id, "applied", decision, neighbors, result)
     else
       {:error, reason} ->
         Logger.error("Knowledge base remember failed: #{inspect(reason)}")
+        record_failure(request_id, reason)
     end
   end
 
+  defp record_outcome(nil, _status, _decision, _neighbors, _result), do: :ok
+
+  defp record_outcome(request_id, status, decision, neighbors, result) do
+    KnowledgeBase.close_decision(request_id, %{
+      status: status,
+      action: result.action,
+      strategy: Map.get(decision, :strategy),
+      target_id: Map.get(result, :id),
+      top_similarity: top_similarity(neighbors),
+      curated: Map.get(decision, :curated, false),
+      detail: result.detail
+    })
+
+    :ok
+  end
+
+  defp record_failure(nil, _reason), do: :ok
+
+  defp record_failure(request_id, reason) do
+    KnowledgeBase.close_decision(request_id, %{
+      status: "failed",
+      detail: "remember failed: #{inspect(reason)}"
+    })
+
+    :ok
+  end
+
+  defp top_similarity([]), do: 0.0
+
+  defp top_similarity(neighbors) do
+    neighbors |> Enum.map(fn n -> 1.0 - n.distance end) |> Enum.max(fn -> 0.0 end)
+  end
+
+  # A discard is a deliberate no-op, but it is still an outcome the caller has
+  # to be able to distinguish from a save.
   defp apply_decision(%{action: "discard"}) do
-    {:ok, "discarded (too similar to existing entry)"}
+    {:ok, %{action: "discarded", detail: "discarded (too similar to an existing entry)"}}
+  end
+
+  # Deprecation only flips a flag on an existing row, so it needs neither
+  # structuring nor a fresh embedding.
+  defp apply_decision(%{action: "deprecate", id: id} = decision) do
+    reason = Map.get(decision, :reason)
+    Logger.info("Knowledge base: deprecating entry ##{id} (reason: #{inspect(reason)})")
+
+    case KnowledgeBase.deprecate(id, reason) do
+      {:ok, entry} ->
+        {:ok,
+         %{
+           action: "deprecated",
+           id: entry.id,
+           title: entry.title,
+           detail: "deprecated ##{entry.id} — #{entry.title}"
+         }}
+
+      {:error, reason} ->
+        {:error, {:deprecate_failed, id, reason}}
+    end
   end
 
   defp apply_decision(decision) do
-    with {:ok, structured} <- structure_text(decision.content),
+    with {:ok, structured} <- fetch_or_structure_text(decision),
          embedding_text <- build_embedding_text(structured, decision.content),
          {:ok, final_embedding} <- Mistral.embed(embedding_text) do
       result = execute_decision(decision, structured, final_embedding)
-      {:ok, "#{result.action} — #{result.title}"}
+      title = Map.get(result, :title, "n/a")
+      {:ok, Map.put(result, :detail, "#{result.action} — #{title}")}
     end
   end
+
+  defp fetch_or_structure_text(%{structured: structured}) when is_map(structured),
+    do: {:ok, structured}
+
+  defp fetch_or_structure_text(decision), do: structure_text(decision.content)
 
   defp build_embedding_text(structured, content) do
     meta = stringify_keys(structured.metadata)
@@ -112,12 +214,11 @@ defmodule HexGh.MCP.Tools.Remember do
 
     symptom = Map.get(meta, "symptom", "N/A")
     fix = Map.get(meta, "fix", "N/A")
-    domain = Map.get(meta, "domain", "general")
     package = Map.get(meta, "package", "N/A")
     version = Map.get(meta, "package_version", "N/A")
 
     """
-    [#{structured.kind} | #{domain}] #{structured.title}
+    [#{structured.kind}] #{structured.title}
     Stack: #{stack_str}
     Package: #{package} (#{version})
     Symptom: #{symptom}
@@ -127,31 +228,31 @@ defmodule HexGh.MCP.Tools.Remember do
     |> String.trim()
   end
 
+  # `curated: false` marks a create that never reached the LLM because nothing
+  # cleared the floor. Recording it separately is what makes the floor itself
+  # measurable rather than a guess.
   defp decide(text, []) do
-    {:ok, %{action: "create", content: text}}
+    {:ok, %{action: "create", content: text, curated: false}}
   end
 
   defp decide(text, neighbors) do
     close = Enum.filter(neighbors, fn n -> 1.0 - n.distance >= @similarity_threshold end)
 
     if close == [] do
-      {:ok, %{action: "create", content: text}}
+      {:ok, %{action: "create", content: text, curated: false}}
     else
-      ask_mistral(text, close)
+      with {:ok, decision} <- ask_mistral(text, close) do
+        {:ok, Map.put(decision, :curated, true)}
+      end
     end
   end
 
   defp ask_mistral(text, neighbors) do
     existing =
-      Enum.map_join(neighbors, "\n\n", fn n ->
-        """
-        [ID: #{n.id}] #{n.title}
-        Kind: #{n.kind}
-        Content: #{n.content}
-        Metadata: #{Jason.encode!(n.metadata)}
-        Last updated: #{Map.get(n, :updated_at, "unknown")}
-        """
-      end)
+      neighbors
+      |> Enum.sort_by(& &1.distance)
+      |> Enum.with_index()
+      |> Enum.map_join("\n\n", fn {n, i} -> render_neighbor(n, i) end)
 
     prompt = """
     You are a knowledge base curator. A new learning is being saved. Similar entries already exist.
@@ -160,34 +261,44 @@ defmodule HexGh.MCP.Tools.Remember do
     NEW LEARNING:
     #{text}
 
-    EXISTING ENTRIES:
+    EXISTING ENTRIES (each shows its measured similarity to the new learning):
     #{existing}
 
-    Decide what to do. Pay special attention to:
-    - **Preserving prior learnings**: Do NOT use "replace" unless the old information is factually wrong, obsolete, or superseded. If the new learning adds a complementary aspect or new facet to an existing topic (e.g. embedding model choice vs chat model choice), you MUST use "merge" or "append" to preserve all learnings in the synthesized content.
-    - **Package versions**: A fix for library v1 may not apply to v2. If versions differ, prefer "create" to keep both.
-    - **API changes**: If an API or behavior changed between versions, the old entry is still valid for its version — prefer "append" or "create".
-    - **Evolving fixes**: If the fix improved (e.g. workaround → proper solution), use "replace" with the better fix.
+    Work through the two steps in order. STEP 1 takes precedence over STEP 2.
 
-    Return ONLY valid JSON with one of:
-    1. {"action": "create", "content": "<the new learning text>"} — genuinely new topic, or version-specific knowledge that shouldn't overwrite the old
-    2. {"action": "discard"} — the new learning is essentially the same as an existing entry with no additional value. Use this when similarity is very high and no new information is present.
-    3. {"action": "update", "id": <existing_id>, "strategy": "append", "content": "<old content + new details>"} — the new learning extends the old with additional context, edge cases, or version notes. PRESERVES all existing content.
-    4. {"action": "update", "id": <existing_id>, "strategy": "merge", "content": "<synthesized content combining old + new>"} — both contain partial truths that should be combined into one comprehensive entry
-    5. {"action": "update", "id": <existing_id>, "strategy": "replace", "content": "<new content>"} — ONLY if the old info is factually wrong/superseded by the new learning
-    6. {"action": "deprecate", "id": <existing_id>, "reason": "<why entry is obsolete/deprecated>"} — the existing entry is completely wrong, dangerous, or obsolete and should be soft-deleted
+    STEP 1 — Does the new learning CONTRADICT or SUPERSEDE any existing entry?
+    A correction is by construction almost identical to the thing it corrects, so it
+    will show a very high similarity. High similarity is therefore NOT evidence that a
+    correction is a duplicate. If the new learning states that something in an existing
+    entry is now wrong, renamed, moved, removed or otherwise out of date:
+      - the old entry is wrong but the topic still exists  -> "replace"
+      - the old entry is wholly obsolete                   -> "deprecate"
+    Never answer "discard" for a correction, no matter how high the similarity.
 
-    DECISION GUIDE (in order of preference):
-    - Similarity > 0.9 and no new facts → "discard"
-    - Similarity > 0.8 and new details/edge cases → "append"
-    - Overlapping but complementary info → "merge"
-    - Old info is wrong or superseded → "replace"
-    - Completely different topic despite embedding proximity → "create"
+    STEP 2 — Otherwise, apply the similarity bands:
+      - similarity > #{@duplicate_threshold} AND the new learning contains no fact absent from the neighbour -> "discard"
+      - similarity between #{@similarity_threshold} and #{@duplicate_threshold}, new learning adds detail, edge cases or version notes -> "append"
+      - similarity between #{@similarity_threshold} and #{@duplicate_threshold}, both hold partial truths that belong together -> "merge"
+      - the topic is genuinely different despite embedding proximity -> "create"
 
-    The final content must be self-contained and comprehensive. Include version/date qualifiers when relevant (e.g. "As of pgvector 0.3..." or "Fixed in Phoenix 1.8+").
+    Additional rules:
+    - **Package versions**: a fix for library v1 may not apply to v2. If versions differ, prefer "create" to keep both.
+    - **API changes**: if behaviour changed between versions, the old entry is still valid for its version — prefer "append" or "create".
+    - **Preserve prior learnings**: outside of STEP 1, never drop information. "append" and "merge" must carry over the existing content.
+    - **Preserve structure**: if either the new learning or the neighbour states a symptom, a root cause or a fix, the content you return must still state them. Merging must not silently drop these.
+    - **One topic per entry**: if the new learning is about a different subject than the neighbour, choose "create" rather than attaching it to an unrelated entry.
+
+    The response shape is fixed by the schema attached to this request; every field
+    carries its own description there. Reason through the workflow above before
+    committing to an action. Include version/date qualifiers in the content where
+    relevant (e.g. "As of pgvector 0.3..." or "Fixed in Phoenix 1.8+").
     """
 
-    case Mistral.chat([%{role: "user", content: prompt}], [], model: Mistral.large_model()) do
+    case Mistral.chat([%{role: "user", content: prompt}], [],
+           model: Mistral.large_model(),
+           json_schema: Schemas.curation(),
+           schema_name: "curation_decision"
+         ) do
       {:ok, %{"content" => content}} ->
         parse_decision(content, text)
 
@@ -196,23 +307,53 @@ defmodule HexGh.MCP.Tools.Remember do
     end
   end
 
+  # Nearest neighbour: full text, because the discard rule turns on whether the
+  # submission contains a fact absent from it, which an excerpt cannot answer.
+  # The label stays neutral: calling it the "likely target" biased the curator
+  # towards attaching to it instead of creating a separate entry.
+  defp render_neighbor(n, 0) do
+    """
+    [ID: #{n.id}] #{n.title}
+    Similarity to the new learning: #{format_similarity(n)}  (full content)
+    Kind: #{n.kind}
+    Content: #{n.content}
+    Metadata: #{Jason.encode!(n.metadata)}
+    Last updated: #{Map.get(n, :updated_at, "unknown")}
+    """
+  end
+
+  # Runner-up: excerpt only. It is present so the curator can recognise a
+  # submission that spans two entries and belongs merged, which needs the gist
+  # rather than the full body.
+  defp render_neighbor(n, _rank) do
+    """
+    [ID: #{n.id}] #{n.title}
+    Similarity to the new learning: #{format_similarity(n)}  (excerpt only)
+    Kind: #{n.kind}
+    Content (first #{@excerpt_chars} chars): #{excerpt(n.content)}
+    Metadata: #{Jason.encode!(n.metadata)}
+    """
+  end
+
+  defp excerpt(content) when is_binary(content) do
+    if String.length(content) > @excerpt_chars do
+      String.slice(content, 0, @excerpt_chars) <> " […truncated]"
+    else
+      content
+    end
+  end
+
+  defp excerpt(content), do: content
+
+  defp format_similarity(%{distance: distance}) when is_float(distance) do
+    "#{Float.round((1.0 - distance) * 100, 1)}%"
+  end
+
+  defp format_similarity(_), do: "unknown"
+
   defp execute_decision(%{action: "create"}, structured, embedding) do
     {:ok, entry} = KnowledgeBase.save(Map.put(structured, :embedding, embedding))
     %{action: "created", id: entry.id, title: entry.title}
-  end
-
-  defp execute_decision(%{action: "deprecate", id: id} = decision, _structured, _embedding) do
-    dec_meta = stringify_keys(decision)
-    reason = Map.get(dec_meta, "reason")
-    Logger.info("Knowledge base: deprecating entry ##{id} (reason: #{inspect(reason)})")
-
-    case KnowledgeBase.deprecate(id, reason) do
-      {:ok, entry} ->
-        %{action: "deprecated", id: entry.id, title: entry.title}
-
-      {:error, _} ->
-        %{action: "error (deprecate failed)", id: id}
-    end
   end
 
   defp execute_decision(%{action: "update", id: id, strategy: strategy}, structured, embedding) do
@@ -231,28 +372,18 @@ defmodule HexGh.MCP.Tools.Remember do
 
   defp structure_text(text) do
     prompt = """
-    Extract structured fields from this technical learning. Return ONLY valid JSON with these fields:
-    - "title": short summary (max 80 chars)
-    - "kind": one of "learning", "pain_point", "decision", "pattern", "package_note"
-    - "domain": one of "deploy" (infrastructure, Docker, reverse proxy, CI/CD, migrations), "config" (runtime.exs, env vars, app config), "code" (patterns, APIs, library usage), "debug" (error resolution, troubleshooting)
-    - "stack": list of technologies involved, lowercase (e.g. ["elixir", "postgres", "postgrex", "docker", "caddy"]).
-      IMPORTANT: Infer implicit stack layers even if not explicitly named in text:
-      - Mentions of Caddyfile / reverse_proxy / 502 / 504 -> include "caddy", "deploy"
-      - Mentions of mix.exs / Plug / GenServer / LiveView / Ecto -> include "elixir", "phoenix"
-      - Mentions of docker / docker-compose / container -> include "docker"
-      - Mentions of pgvector / postgrex / psql -> include "postgres"
-    - "symptom": what was observed or error message (optional, null if N/A)
-    - "cause": root cause (optional, null if N/A)
-    - "fix": how it was resolved (optional, null if N/A)
-    - "package": hex.pm package name if applicable (e.g. "phoenix", "pgvector", "anubis_mcp"), null otherwise
-    - "package_version": version or version constraint this applies to (e.g. "~> 0.3", "3.0.0-beta.4"), null if N/A
-    - "resolved_in": version where the issue was fixed, if known (e.g. "1.8.0"), null otherwise
-    - "repo": GitHub repo (e.g. "phoenixframework/phoenix", "dwyl/hexpm-github-search") if applicable, null otherwise
+    Extract the structured fields describing this technical learning. The response
+    shape is fixed by the schema attached to this request and every field carries
+    its own description there.
 
     Text: #{text}
     """
 
-    case Mistral.chat([%{role: "user", content: prompt}], [], model: Mistral.small_model()) do
+    case Mistral.chat([%{role: "user", content: prompt}], [],
+           model: Mistral.small_model(),
+           json_schema: Schemas.structuring(),
+           schema_name: "structured_learning"
+         ) do
       {:ok, %{"content" => content}} ->
         case Jason.decode(clean_json(content)) do
           {:ok, parsed} ->
@@ -270,7 +401,7 @@ defmodule HexGh.MCP.Tools.Remember do
           {:error, _} ->
             {:ok,
              %{
-               kind: "learning",
+               kind: Vocabulary.infer_kind(%{}),
                title: String.slice(text, 0, 80),
                content: text,
                metadata: %{}
@@ -296,22 +427,70 @@ defmodule HexGh.MCP.Tools.Remember do
 
       {:ok, %{"action" => "update", "id" => id, "content" => merged} = parsed} ->
         strategy = parsed["strategy"] || "merge"
-        resolve_update(parse_id(id), merged, strategy)
 
-      {:ok, %{"action" => "create", "content" => new_content}} ->
-        {:ok, %{action: "create", content: new_content}}
+        resolve_update(
+          parse_id(id),
+          merged,
+          strategy,
+          build_structured_from_parsed(merged, parsed)
+        )
+
+      # Previously missing: the curator prompt offers "deprecate" as option 6,
+      # but with no clause for it the response fell through to the catch-all and
+      # was turned into a "create". Soft-deprecation could never actually fire,
+      # which is why superseded entries stayed live alongside their replacements.
+      {:ok, %{"action" => "deprecate", "id" => id} = parsed} ->
+        resolve_deprecate(parse_id(id), parsed["reason"], original_text)
+
+      {:ok, %{"action" => "create", "content" => new_content} = parsed} ->
+        {:ok,
+         %{
+           action: "create",
+           content: new_content,
+           structured: build_structured_from_parsed(new_content, parsed)
+         }}
 
       _ ->
         {:ok, %{action: "create", content: original_text}}
     end
   end
 
-  defp resolve_update({:ok, parsed_id}, merged, strategy) do
-    {:ok, %{action: "update", id: parsed_id, content: merged, strategy: strategy}}
+  defp resolve_update({:ok, parsed_id}, merged, strategy, structured) do
+    {:ok,
+     %{
+       action: "update",
+       id: parsed_id,
+       content: merged,
+       strategy: strategy,
+       structured: structured
+     }}
   end
 
-  defp resolve_update(:error, merged, _strategy) do
-    {:ok, %{action: "create", content: merged}}
+  defp resolve_update(:error, merged, _strategy, structured) do
+    {:ok, %{action: "create", content: merged, structured: structured}}
+  end
+
+  # The curator already returns the structured fields alongside its decision, so
+  # the separate small-model structuring call is redundant on that path. It now
+  # runs only when the curator never did — the short-circuit below the floor.
+  defp build_structured_from_parsed(text, parsed) when is_map(parsed) do
+    metadata = extract_metadata(parsed)
+    {kind, metadata} = normalize_kind(parsed["kind"], metadata)
+
+    %{
+      kind: kind,
+      title: parsed["title"] || String.slice(text, 0, 80),
+      content: text,
+      metadata: metadata
+    }
+  end
+
+  defp resolve_deprecate({:ok, parsed_id}, reason, original_text) do
+    {:ok, %{action: "deprecate", id: parsed_id, reason: reason, content: original_text}}
+  end
+
+  defp resolve_deprecate(:error, _reason, original_text) do
+    {:ok, %{action: "create", content: original_text}}
   end
 
   defp parse_id(id) when is_integer(id), do: {:ok, id}
@@ -330,8 +509,7 @@ defmodule HexGh.MCP.Tools.Remember do
       symptom: parsed["symptom"],
       cause: parsed["cause"],
       fix: parsed["fix"],
-      domain: parsed["domain"],
-      stack: parsed["stack"] || [],
+      stack: Vocabulary.normalize_tags(parsed["stack"] || []),
       package: parsed["package"],
       package_version: parsed["package_version"],
       resolved_in: parsed["resolved_in"],
@@ -341,23 +519,21 @@ defmodule HexGh.MCP.Tools.Remember do
     |> Map.new()
   end
 
-  @allowed_kinds ~w(learning pain_point decision pattern package_note)
+  defp normalize_kind(kind, metadata) when is_binary(kind) do
+    if kind in Vocabulary.kinds() do
+      {kind, metadata}
+    else
+      # Inferred from the fields present rather than defaulting to a constant.
+      # A fixed fallback is how the previous `learning` value came to hold every
+      # row in the table, which left the `kind` filter unable to discriminate.
+      {Vocabulary.infer_kind(metadata), Map.put(metadata, :raw_kind, kind)}
+    end
+  end
 
-  defp normalize_kind(nil, metadata), do: {"learning", metadata}
-  defp normalize_kind(kind, metadata) when kind in @allowed_kinds, do: {kind, metadata}
+  defp normalize_kind(nil, metadata), do: {Vocabulary.infer_kind(metadata), metadata}
 
   defp normalize_kind(raw_kind, metadata) do
-    normalized =
-      case raw_kind do
-        "bug" -> "pain_point"
-        "caveat" -> "pain_point"
-        "workaround" -> "pain_point"
-        "tip" -> "learning"
-        "info" -> "learning"
-        _ -> "learning"
-      end
-
-    {normalized, Map.put(metadata, :raw_kind, raw_kind)}
+    {Vocabulary.infer_kind(metadata), Map.put(metadata, :raw_kind, inspect(raw_kind))}
   end
 
   defp stringify_keys(map) when is_map(map) do

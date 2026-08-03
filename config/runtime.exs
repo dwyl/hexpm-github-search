@@ -29,7 +29,7 @@ config :hex_gh,
   mistral_api_key:
     System.get_env("MISTRAL_API_KEY") || Application.get_env(:hex_gh, :mistral_api_key),
   mistral_model_small: System.get_env("MISTRAL_MODEL_SMALL", "mistral-small-latest"),
-  mistral_model_large: System.get_env("MISTRAL_MODEL_LARGE", "mistral-medium-latest"),
+  mistral_model_large: System.get_env("MISTRAL_MODEL_LARGE", "mistral-large-latest"),
   mistral_model_embed: System.get_env("MISTRAL_MODEL_EMBED", "mistral-embed"),
   mistral_embed_dimensions: String.to_integer(System.get_env("MISTRAL_EMBED_DIMENSIONS", "1024")),
   mistral_transcription_model:

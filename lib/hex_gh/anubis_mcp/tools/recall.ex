@@ -6,16 +6,16 @@ defmodule HexGh.MCP.Tools.Recall do
   alias Anubis.MCP.Error
   alias Anubis.Server.Response
   alias HexGh.AI.Mistral
+  alias HexGh.Knowledge.Vocabulary
   alias HexGh.KnowledgeBase
 
   schema do
     field(:query, {:required, :string}, description: "Search query for the knowledge base")
 
-    field(:kind, :string,
-      description: "Optional filter: learning, pain_point, decision, pattern, or package_note"
-    )
-
-    field(:domain, :string, description: "Optional domain filter: deploy, config, code, or debug")
+    # Description derived from the vocabulary: this schema previously advertised
+    # filter values the writer never emitted, so every filtered search returned
+    # nothing.
+    field(:kind, :string, description: Vocabulary.kinds_for_schema())
 
     field(:stack, :string,
       description: "Optional technology tag filter (e.g. 'caddy', 'postgres', 'bandit', 'elixir')"
@@ -33,7 +33,6 @@ defmodule HexGh.MCP.Tools.Recall do
         limit: 5,
         query: query,
         kind: Map.get(params, :kind),
-        domain: Map.get(params, :domain),
         stack: Map.get(params, :stack),
         package: Map.get(params, :package)
       ]

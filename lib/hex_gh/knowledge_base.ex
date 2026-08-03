@@ -5,7 +5,11 @@ defmodule HexGh.KnowledgeBase do
 
   import Ecto.Query
   alias HexGh.AI.Mistral
-  alias HexGh.{Knowledge, Repo}
+  alias HexGh.Knowledge
+  alias HexGh.Knowledge.Decision
+  alias HexGh.Repo
+
+  require Logger
 
   def save(attrs) when is_map(attrs) do
     attrs
@@ -52,7 +56,6 @@ defmodule HexGh.KnowledgeBase do
   def search_hybrid(query_text, embedding, opts \\ []) do
     limit = Keyword.get(opts, :limit, 5)
     kind = Keyword.get(opts, :kind)
-    domain = Keyword.get(opts, :domain)
     stack = Keyword.get(opts, :stack)
     package = Keyword.get(opts, :package)
 
@@ -62,20 +65,19 @@ defmodule HexGh.KnowledgeBase do
       FROM knowledge
       WHERE (outdated = false)
         AND ($1::text IS NULL OR kind = $1)
-        AND ($2::text IS NULL OR metadata->>'domain' = $2)
-        AND ($3::text IS NULL OR metadata->>'package' = $3)
-        AND ($4::text IS NULL OR metadata->'stack' @> jsonb_build_array($4::text))
+        AND ($2::text IS NULL OR metadata->>'package' = $2)
+        AND ($3::text IS NULL OR metadata->'stack' @> jsonb_build_array($3::text))
     ),
     vector_candidates AS (
-      SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $5::vector) AS vec_rank
+      SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $4::vector) AS vec_rank
       FROM pre_filtered
-      ORDER BY embedding <=> $5::vector
+      ORDER BY embedding <=> $4::vector
       LIMIT 20
     ),
     text_candidates AS (
-      SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(search_vector, websearch_to_tsquery('english', $6)) DESC) AS text_rank
+      SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(search_vector, websearch_to_tsquery('english', $5)) DESC) AS text_rank
       FROM pre_filtered
-      WHERE search_vector @@ websearch_to_tsquery('english', $6)
+      WHERE search_vector @@ websearch_to_tsquery('english', $5)
       LIMIT 20
     ),
     candidate_pool AS (
@@ -84,7 +86,7 @@ defmodule HexGh.KnowledgeBase do
       SELECT id FROM text_candidates
     )
     SELECT k.id, k.title, k.kind, k.content, k.metadata, k.updated_at,
-           (k.embedding <=> $5::vector) AS distance,
+           (k.embedding <=> $4::vector) AS distance,
            ((COALESCE(1.0 / (60.0 + v.vec_rank), 0.0) + COALESCE(1.0 / (60.0 + t.text_rank), 0.0)) *
             POWER(0.995, GREATEST(0.0, EXTRACT(DAY FROM (NOW() - k.updated_at))))) AS rrf_score
     FROM candidate_pool c
@@ -92,12 +94,11 @@ defmodule HexGh.KnowledgeBase do
     LEFT JOIN vector_candidates v ON v.id = c.id
     LEFT JOIN text_candidates t ON t.id = c.id
     ORDER BY rrf_score DESC
-    LIMIT $7;
+    LIMIT $6;
     """
 
     params = [
       kind,
-      domain,
       package,
       stack,
       Pgvector.new(embedding),
@@ -131,18 +132,12 @@ defmodule HexGh.KnowledgeBase do
   def search_vector(embedding, opts \\ []) when is_list(embedding) do
     limit = Keyword.get(opts, :limit, 5)
     kind = Keyword.get(opts, :kind)
-    domain = Keyword.get(opts, :domain)
     stack = Keyword.get(opts, :stack)
     package = Keyword.get(opts, :package)
 
     query = from(k in Knowledge, where: k.outdated == false)
 
     query = if kind, do: from(k in query, where: k.kind == ^kind), else: query
-
-    query =
-      if domain,
-        do: from(k in query, where: fragment("?->>'domain' = ?", k.metadata, ^domain)),
-        else: query
 
     query =
       if package,
@@ -186,6 +181,49 @@ defmodule HexGh.KnowledgeBase do
     |> Repo.all()
   end
 
+  # -- Decision audit trail --
+
+  @doc """
+  Opens a decision record so the caller can find out what became of a
+  submission. Returns the `request_id` to poll with `get_decision/1`.
+  """
+  def open_decision(request_id, submitted_text) do
+    %{request_id: request_id, status: "processing", submitted_text: submitted_text}
+    |> Decision.changeset()
+    |> Repo.insert()
+  end
+
+  @doc "Closes a decision record with what the curator actually did."
+  def close_decision(request_id, attrs) do
+    case Repo.get_by(Decision, request_id: request_id) do
+      nil -> {:error, :not_found}
+      decision -> decision |> Decision.changeset(attrs) |> Repo.update()
+    end
+  end
+
+  def get_decision(request_id) do
+    case Repo.get_by(Decision, request_id: request_id) do
+      nil -> {:error, :not_found}
+      decision -> {:ok, decision}
+    end
+  end
+
+  # -- Maintenance --
+
+  @doc """
+  Deletes every knowledge entry and decision record.
+
+  Intended for the taxonomy reset — the stored `kind` and `domain` values
+  predate the current vocabulary, and entries carry embeddings computed from a
+  prompt that no longer matches. Reseed with `seed_pain_points/0` afterwards.
+  """
+  def reset! do
+    {decisions, _} = Repo.delete_all(Decision)
+    {entries, _} = Repo.delete_all(Knowledge)
+    Logger.info("Knowledge base reset: #{entries} entries, #{decisions} decisions deleted")
+    %{entries: entries, decisions: decisions}
+  end
+
   def seed_pain_points do
     pain_points = [
       %{
@@ -194,7 +232,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Caddy buffers HTTP responses by default, breaking Server-Sent Events (SSE) connections used by MCP StreamableHTTP transport. The MCP client sees a connection but never receives tool capabilities.",
         metadata: %{
-          domain: "deploy",
           stack: ["caddy", "mcp", "sse"],
           symptom: "MCP client connects but reports 'Capabilities: none'",
           cause: "Caddy buffers chunked/SSE responses instead of streaming them",
@@ -207,7 +244,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Bandit HTTP server doesn't automatically flush response chunks like Cowboy. SSE connections hang unless you explicitly use `Plug.Conn.chunk/2` after `send_chunked/2`.",
         metadata: %{
-          domain: "code",
           stack: ["elixir", "bandit", "sse", "plug"],
           package: "bandit",
           symptom: "SSE connections established but no events received",
@@ -221,7 +257,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Services in different Docker Compose projects can't reach each other's databases by default. The hex_gh container couldn't connect to crm_postgres in another project.",
         metadata: %{
-          domain: "deploy",
           stack: ["docker", "postgres"],
           symptom: "Database connection refused or timeout",
           cause: "Docker containers in separate compose files are on isolated networks",
@@ -235,7 +270,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Boruta OAuth library uses PostgreSQL-specific features (JSONB, gen_random_uuid(), array columns) making it incompatible with SQLite. Required adding a full Postgres setup.",
         metadata: %{
-          domain: "config",
           stack: ["elixir", "postgres", "sqlite"],
           package: "boruta",
           package_version: "~> 3.0.0-beta.4",
@@ -250,7 +284,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Argon2 hashes contain `$` characters which Docker Compose interprets as variable references in .env files, causing authentication to fail with mangled hashes.",
         metadata: %{
-          domain: "deploy",
           stack: ["docker", "elixir"],
           package: "argon2_elixir",
           symptom: "Admin login always fails despite correct password",
@@ -264,7 +297,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Default OAuth token TTL (1 hour) causes Claude Code MCP connections to expire during long coding sessions, requiring re-authentication.",
         metadata: %{
-          domain: "config",
           stack: ["elixir", "mcp", "boruta"],
           package: "boruta",
           symptom: "MCP connection drops after token expiry",
@@ -278,7 +310,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "The original MCP server module was named HexGh.MCPServer but Anubis expected HexGh.MCP.Server. The mismatch caused silent tool registration failures.",
         metadata: %{
-          domain: "code",
           stack: ["elixir", "mcp", "otp"],
           package: "anubis_mcp",
           repo: "jfim/anubis-mcp",
@@ -293,7 +324,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Unconditional `raise` in runtime.exs for optional service credentials crashes all release commands (migrate, eval) even when those commands don't need the service.",
         metadata: %{
-          domain: "config",
           stack: ["elixir", "phoenix"],
           symptom: "Mix release commands crash with missing env var errors",
           cause: "runtime.exs runs for ALL release commands, not just the server",
@@ -307,7 +337,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Calling Application.get_env inside runtime.exs returns compile-time values, not the values being set in the same file. Config writes go to an accumulator applied after the file finishes.",
         metadata: %{
-          domain: "config",
           stack: ["elixir"],
           symptom: "Config values appear as nil despite being set earlier in the same file",
           cause:
@@ -322,7 +351,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "PostgreSQL extensions are scoped to individual databases. Running CREATE EXTENSION vector in one database (e.g. crm_reactor_prod) does not make it available in another (e.g. hex_gh). The migration fails with 'type vector does not exist' if the extension isn't enabled in the target database.",
         metadata: %{
-          domain: "deploy",
           stack: ["postgres", "pgvector"],
           package: "pgvector",
           symptom:
@@ -338,7 +366,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "Postgrex cannot handle the vector type by default. Without registering Pgvector.extensions() in a custom types module, queries fail with 'type vector can not be handled by the types module Postgrex.DefaultTypes'.",
         metadata: %{
-          domain: "config",
           stack: ["elixir", "postgres", "postgrex", "ecto"],
           package: "pgvector",
           package_version: "~> 0.3",
@@ -356,7 +383,6 @@ defmodule HexGh.KnowledgeBase do
         content:
           "The standard postgres Docker image does not include the pgvector extension. CREATE EXTENSION vector fails with 'could not open extension control file'. Must use the pgvector/pgvector:pgXX-bookworm image variant matching your PostgreSQL version.",
         metadata: %{
-          domain: "deploy",
           stack: ["docker", "postgres", "pgvector"],
           symptom: "CREATE EXTENSION vector fails with 'could not open extension control file'",
           cause: "Standard postgres Docker image doesn't ship with pgvector extension files",
@@ -371,15 +397,15 @@ defmodule HexGh.KnowledgeBase do
 
   defp seed_entry(entry) do
     if Repo.exists?(from(k in Knowledge, where: k.title == ^entry.title)) do
-      IO.puts("Skipped (exists): #{entry.title}")
+      Logger.info("Knowledge seed skipped (exists): #{entry.title}")
     else
       case Mistral.embed("#{entry.title}: #{entry.content}") do
         {:ok, embedding} ->
           {:ok, _} = save(Map.put(entry, :embedding, embedding))
-          IO.puts("Saved: #{entry.title}")
+          Logger.info("Knowledge seed saved: #{entry.title}")
 
         {:error, reason} ->
-          IO.puts("Failed to embed '#{entry.title}': #{inspect(reason)}")
+          Logger.error("Knowledge seed embed failed for #{entry.title}: #{inspect(reason)}")
       end
     end
   end
